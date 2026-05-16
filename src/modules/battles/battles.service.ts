@@ -10,6 +10,7 @@ import { Prisma, type StreamRole } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { RealtimeGateway } from "../realtime/realtime.gateway";
 import { NotificationsService } from "../notifications/notifications.service";
+import { GiftBatchService } from "../gift-batch/gift-batch.service";
 import type { BattleTypeV2 } from "./battle-v2.contract";
 import { serializeBattleSessionV2 } from "./battle-v2.serializer";
 import {
@@ -29,6 +30,7 @@ export class BattlesService {
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
     private readonly notifications: NotificationsService,
+    private readonly giftBatch: GiftBatchService,
   ) { }
 
   private room(streamId: string) {
@@ -1220,6 +1222,72 @@ export class BattlesService {
     return "REGULAR";
   }
 
+  /**
+   * Update battle scores in real-time for a gift that is being accumulated in
+   * the GiftBatchService (i.e. no GiftTransaction DB record yet). This replaces
+   * the combination of applyGiftToActiveBattle + recordBattleGiftContributionV2
+   * for the deferred-transaction gift path. The actual BattleContribution /
+   * BattleSideContribution records are created when giftBatch.flushBattle() runs.
+   */
+  async addScoreForDeferredGiftV2(params: {
+    battleSessionId: string;
+    sideId: string;
+    diamondValue: number;
+  }): Promise<void> {
+    const { battleSessionId, sideId, diamondValue } = params;
+    if (!diamondValue || diamondValue <= 0) return;
+
+    await (this.prisma as any).battleSide.update({
+      where: { id: sideId },
+      data: { score: { increment: diamondValue } },
+    });
+
+    const session = await (this.prisma as any).battleSession.findUnique({
+      where: { id: battleSessionId },
+      include: this.getBattleSessionIncludeV2(),
+    });
+
+    if (session) {
+      const contributions = await this.getBattleSideContributionsForSummaryV2(battleSessionId);
+      const serialized = serializeBattleSessionV2(session, contributions);
+      this.emitBattleV2EventToSessionStreams("battle.v2.scoreUpdated", serialized, {
+        sideId,
+        diamondValue,
+        deferred: true,
+      });
+    }
+  }
+
+  async addScoreForDeferredGiftV1(params: {
+    battleId: string;
+    streamId: string;
+    recipientUserId: string;
+    diamondValue: number;
+  }): Promise<void> {
+    const { battleId, streamId, recipientUserId, diamondValue } = params;
+    if (!diamondValue || diamondValue <= 0) return;
+
+    const battle = await this.prisma.battle.findUnique({ where: { id: battleId } });
+    if (!battle) return;
+
+    const recipientIsHost = recipientUserId === battle.hostUserId;
+    const patch = recipientIsHost
+      ? { hostScore: { increment: diamondValue } }
+      : { opponentScore: { increment: diamondValue } };
+
+    const updated = await this.prisma.battle.update({
+      where: { id: battleId },
+      data: patch as any,
+    });
+
+    this.emitBattleScoreUpdated({
+      streamId,
+      battleId,
+      hostScore: updated.hostScore,
+      opponentScore: updated.opponentScore,
+    });
+  }
+
   async recordBattleGiftContributionV2(params: {
     battleSessionId: string;
     sideId: string;
@@ -1567,6 +1635,11 @@ export class BattlesService {
           endedReason: "NORMAL",
         },
       });
+    });
+
+    // Flush accumulated battle gifts now that gifts are no longer accepted.
+    void this.giftBatch.flushBattle(battleSessionId).catch((err) => {
+      console.warn(`[BattlesService] gift batch flush failed for battle ${battleSessionId}:`, err);
     });
 
     const serialized = await this.reloadSerializedBattleSessionV2(battleSessionId);
@@ -2423,6 +2496,11 @@ export class BattlesService {
       return false;
     }
 
+    // Flush accumulated gifts before cancelling – no more gifts will arrive.
+    void this.giftBatch.flushBattle(session.id).catch((err) => {
+      console.warn(`[BattlesService] gift batch flush failed (cancelled) for battle ${session.id}:`, err);
+    });
+
     await (this.prisma as any).battleSession.update({
       where: { id: session.id },
       data: {
@@ -3131,6 +3209,11 @@ export class BattlesService {
     if (battle.hostUserId !== params.actorUserId && battle.opponentUserId !== params.actorUserId) {
       throw new ForbiddenException("Not allowed");
     }
+
+    // Flush accumulated gifts before ending – no more gifts will arrive.
+    void this.giftBatch.flushBattle(params.battleId).catch((err) => {
+      console.warn(`[BattlesService] gift batch flush failed for v1 battle ${params.battleId}:`, err);
+    });
 
     const endedAt = new Date();
 
