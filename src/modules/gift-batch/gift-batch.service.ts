@@ -93,6 +93,9 @@ export class GiftBatchService {
   // Key format: battleId:senderUserId:recipientUserId:giftId
   private readonly pending = new Map<string, PendingEntry>();
 
+  // Track keys currently being processed to prevent concurrent commits
+  private readonly inFlight = new Set<string>();
+
   // -------------------------------------------------------------------------
   // Public API
   // -------------------------------------------------------------------------
@@ -164,7 +167,7 @@ export class GiftBatchService {
     const entries = this.getPendingForBattle(battleId);
     if (entries.length === 0) return;
 
-    // Remove from pending first so concurrent flush calls are safe.
+    // Remove from pending and mark as in-flight to prevent concurrent processing
     for (const entry of entries) {
       const key = this.buildKey(
         entry.battleId,
@@ -172,12 +175,26 @@ export class GiftBatchService {
         entry.recipientUserId,
         entry.gift.id,
       );
+
+      // Skip if already being processed
+      if (this.inFlight.has(key)) {
+        continue;
+      }
+
+      this.inFlight.add(key);
       this.pending.delete(key);
     }
 
     const config = await this.getCreatorEarningsConfig();
 
     for (const entry of entries) {
+      const key = this.buildKey(entry.battleId, entry.senderUserId, entry.recipientUserId, entry.gift.id);
+
+      // Skip if this key wasn't marked in-flight (was already being processed)
+      if (!this.inFlight.has(key)) {
+        continue;
+      }
+
       try {
         await this.commitEntry(entry, config);
       } catch (err) {
@@ -187,11 +204,22 @@ export class GiftBatchService {
           `gift ${entry.gift.id}:`,
           err,
         );
-        // Re-add to pending so it can be retried by a sweep or next flush call.
-        this.pending.set(
-          this.buildKey(entry.battleId, entry.senderUserId, entry.recipientUserId, entry.gift.id),
-          entry,
-        );
+        // Re-add to pending, merging with any newer buffered state that may have arrived.
+        const existing = this.pending.get(key);
+        if (existing) {
+          // Merge failed entry into existing: accumulate quantities, coin sources, update timestamps
+          existing.quantity += entry.quantity;
+          existing.totalCoinCost += entry.totalCoinCost;
+          existing.totalDiamondValue += entry.totalDiamondValue;
+          existing.giftCoinSourceIds.push(...entry.giftCoinSourceIds);
+          existing.updatedAt = new Date();
+        } else {
+          // No newer state, just re-insert the failed entry
+          this.pending.set(key, entry);
+        }
+      } finally {
+        // Always remove from in-flight when done (success or failure)
+        this.inFlight.delete(key);
       }
     }
   }
@@ -384,6 +412,11 @@ export class GiftBatchService {
     }
 
     for (const key of stale) {
+      // Skip if already in-flight (being processed by flushBattle or another sweep)
+      if (this.inFlight.has(key)) {
+        continue;
+      }
+
       const entry = this.pending.get(key);
       if (entry) {
         console.warn(
@@ -392,11 +425,24 @@ export class GiftBatchService {
           `gift=${entry.gift.id} qty=${entry.quantity} ` +
           `coins=${entry.totalCoinCost} diamonds=${entry.totalDiamondValue}`,
         );
-        // Attempt async flush first before deleting from pending.
-        // On failure, re-insert the entry so it can be retried.
+        // Mark as in-flight and remove from pending
+        this.inFlight.add(key);
+        this.pending.delete(key);
+
+        // Attempt async flush. On failure, re-insert the entry so it can be retried.
         this.commitStaleEntry(entry, key).catch((err) => {
           console.error("[GiftBatch] Failed to commit stale entry, re-inserting:", err);
-          this.pending.set(key, entry);
+          const existing = this.pending.get(key);
+          if (existing) {
+            // Merge failed entry into existing
+            existing.quantity += entry.quantity;
+            existing.totalCoinCost += entry.totalCoinCost;
+            existing.totalDiamondValue += entry.totalDiamondValue;
+            existing.giftCoinSourceIds.push(...entry.giftCoinSourceIds);
+            existing.updatedAt = new Date();
+          } else {
+            this.pending.set(key, entry);
+          }
         });
       }
     }
@@ -406,11 +452,12 @@ export class GiftBatchService {
     try {
       const config = await this.getCreatorEarningsConfig();
       await this.commitEntry(entry, config);
-      // Only delete after successful commit
-      this.pending.delete(key);
     } catch (err) {
       console.error("[GiftBatch] Failed to commit stale entry during sweep:", err);
       throw err; // Re-throw so caller can handle re-insertion
+    } finally {
+      // Always remove from in-flight when done (success or failure)
+      this.inFlight.delete(key);
     }
   }
 }

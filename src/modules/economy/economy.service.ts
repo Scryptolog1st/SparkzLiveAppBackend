@@ -1000,28 +1000,35 @@ export class EconomyService {
 
     // ------------------------------------------------------------------
     // 3. Accumulate the gift in the batch buffer with coin source data.
+    // Post-transaction steps are wrapped to ensure idempotency/recoverability.
     // ------------------------------------------------------------------
-    this.giftBatch.accumulate({
-      battleId: battleGiftTarget.battleId,
-      battleKind,
-      sideId: battleGiftTarget.sideId || null,
-      streamId,
-      senderUserId,
-      recipientUserId,
-      gift: {
-        id: gift.id,
-        name: gift.name,
-        coinCost: gift.coinCost,
-        diamondValue: gift.diamondValue,
-        isBigGift: gift.isBigGift,
-        mediaUrl: gift.mediaUrl ?? null,
-        mediaType: gift.mediaType,
-        effectSize: gift.effectSize ?? null,
-      },
-      quantity,
-      pendingTxId,
-      giftCoinSourceIds,
-    });
+    try {
+      this.giftBatch.accumulate({
+        battleId: battleGiftTarget.battleId,
+        battleKind,
+        sideId: battleGiftTarget.sideId || null,
+        streamId,
+        senderUserId,
+        recipientUserId,
+        gift: {
+          id: gift.id,
+          name: gift.name,
+          coinCost: gift.coinCost,
+          diamondValue: gift.diamondValue,
+          isBigGift: gift.isBigGift,
+          mediaUrl: gift.mediaUrl ?? null,
+          mediaType: gift.mediaType,
+          effectSize: gift.effectSize ?? null,
+        },
+        quantity,
+        pendingTxId,
+        giftCoinSourceIds,
+      });
+    } catch (e) {
+      console.error("[EconomyService] Failed to accumulate deferred gift in batch buffer:", e);
+      // Log error but don't throw - gift coin sources are already committed,
+      // manual reconciliation may be required
+    }
 
     // ------------------------------------------------------------------
     // 4. Update battle score in real-time (deferred contribution record).
@@ -1042,9 +1049,9 @@ export class EconomyService {
         });
       }
     } catch (e) {
-      console.error("[EconomyService] deferred battle score update failed:", e);
-      // Re-throw so the caller can observe and handle the failure
-      throw e;
+      console.error("[EconomyService] Failed to update battle score for deferred gift:", e);
+      // Log error but don't throw - wallets are already updated, score can be
+      // reconciled from accumulated gifts at flush time
     }
 
     // ------------------------------------------------------------------

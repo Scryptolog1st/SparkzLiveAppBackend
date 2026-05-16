@@ -1237,10 +1237,14 @@ export class BattlesService {
     const { battleSessionId, sideId, diamondValue } = params;
     if (!diamondValue || diamondValue <= 0) return;
 
-    await (this.prisma as any).battleSide.update({
-      where: { id: sideId },
+    const result = await (this.prisma as any).battleSide.updateMany({
+      where: { id: sideId, battleId: battleSessionId },
       data: { score: { increment: diamondValue } },
     });
+
+    if (result.count !== 1) {
+      throw new Error(`Battle side score update failed: expected 1 row, got ${result.count}`);
+    }
 
     const session = await (this.prisma as any).battleSession.findUnique({
       where: { id: battleSessionId },
@@ -1269,6 +1273,11 @@ export class BattlesService {
 
     const battle = await this.prisma.battle.findUnique({ where: { id: battleId } });
     if (!battle) return;
+
+    // Validate recipient is a battle participant
+    if (recipientUserId !== battle.hostUserId && recipientUserId !== battle.opponentUserId) {
+      throw new Error(`Recipient ${recipientUserId} is not a participant in battle ${battleId}`);
+    }
 
     const recipientIsHost = recipientUserId === battle.hostUserId;
     const patch = recipientIsHost
@@ -1638,9 +1647,12 @@ export class BattlesService {
     });
 
     // Flush accumulated battle gifts now that gifts are no longer accepted.
-    void this.giftBatch.flushBattle(battleSessionId).catch((err) => {
-      console.warn(`[BattlesService] gift batch flush failed for battle ${battleSessionId}:`, err);
-    });
+    try {
+      await this.giftBatch.flushBattle(battleSessionId);
+    } catch (err) {
+      console.error(`[BattlesService] gift batch flush failed for battle ${battleSessionId}:`, err);
+      throw err;
+    }
 
     const serialized = await this.reloadSerializedBattleSessionV2(battleSessionId);
 
@@ -2497,9 +2509,12 @@ export class BattlesService {
     }
 
     // Flush accumulated gifts before cancelling – no more gifts will arrive.
-    void this.giftBatch.flushBattle(session.id).catch((err) => {
-      console.warn(`[BattlesService] gift batch flush failed (cancelled) for battle ${session.id}:`, err);
-    });
+    try {
+      await this.giftBatch.flushBattle(session.id);
+    } catch (err) {
+      console.error(`[BattlesService] gift batch flush failed (cancelled) for battle ${session.id}:`, err);
+      throw err;
+    }
 
     await (this.prisma as any).battleSession.update({
       where: { id: session.id },
@@ -3211,9 +3226,12 @@ export class BattlesService {
     }
 
     // Flush accumulated gifts before ending – no more gifts will arrive.
-    void this.giftBatch.flushBattle(params.battleId).catch((err) => {
-      console.warn(`[BattlesService] gift batch flush failed for v1 battle ${params.battleId}:`, err);
-    });
+    try {
+      await this.giftBatch.flushBattle(params.battleId);
+    } catch (err) {
+      console.error(`[BattlesService] gift batch flush failed for v1 battle ${params.battleId}:`, err);
+      throw err;
+    }
 
     const endedAt = new Date();
 
