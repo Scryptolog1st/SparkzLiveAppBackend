@@ -4,9 +4,10 @@ import { BattlesService } from "./battles.service";
 import { StreamsModule } from "../streams/streams.module";
 import { RealtimeModule } from "../realtime/realtime.module";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { GiftBatchModule } from "../gift-batch/gift-batch.module";
 
 @Module({
-  imports: [StreamsModule, RealtimeModule, NotificationsModule],
+  imports: [StreamsModule, RealtimeModule, NotificationsModule, GiftBatchModule],
   controllers: [BattlesController],
   providers: [BattlesService],
   exports: [BattlesService],
