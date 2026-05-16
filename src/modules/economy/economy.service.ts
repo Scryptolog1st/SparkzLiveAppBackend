@@ -951,12 +951,14 @@ export class EconomyService {
 
     const totalCoinCost = gift.coinCost * quantity;
     const totalDiamondValue = gift.diamondValue * quantity;
+    const pendingTxId = randomUUID();
+    const battleKind: "v1" | "v2" = battleGiftTarget.sideId ? "v2" : "v1";
 
     // ------------------------------------------------------------------
     // 2. Debit sender coins + credit recipient diamonds in one transaction.
     //    No GiftTransaction or WalletLedger rows yet – those come at flush.
     // ------------------------------------------------------------------
-    const { senderWallet, recipientWallet } = await this.prisma.$transaction(async (tx) => {
+    const { senderWallet, recipientWallet, giftCoinSourceIds } = await this.prisma.$transaction(async (tx) => {
       const debited = await tx.wallet.updateMany({
         where: { userId: senderUserId, coins: { gte: totalCoinCost } },
         data: { coins: { decrement: totalCoinCost } },
@@ -966,23 +968,39 @@ export class EconomyService {
         throw new ForbiddenException("Insufficient coins");
       }
 
-      const updatedRecipient = await tx.wallet.update({
+      // Upsert recipient wallet to handle first-time recipients
+      const updatedRecipient = await tx.wallet.upsert({
         where: { userId: recipientUserId },
-        data: { diamondsEarned: { increment: totalDiamondValue } },
+        create: {
+          userId: recipientUserId,
+          coins: 0,
+          diamondsEarned: totalDiamondValue,
+        },
+        update: {
+          diamondsEarned: { increment: totalDiamondValue },
+        },
       });
 
       const updatedSender = await tx.wallet.findUnique({ where: { userId: senderUserId } });
       if (!updatedSender) throw new Error("Sender wallet missing after debit");
 
-      return { senderWallet: updatedSender, recipientWallet: updatedRecipient };
+      // Consume coin lots for the deferred gift
+      const coinSources = await this.consumeCoinLotsForGift(tx, {
+        userId: senderUserId,
+        giftTxId: pendingTxId,
+        coinCost: totalCoinCost,
+      });
+
+      return {
+        senderWallet: updatedSender,
+        recipientWallet: updatedRecipient,
+        giftCoinSourceIds: coinSources.map((s) => s.id),
+      };
     });
 
     // ------------------------------------------------------------------
-    // 3. Accumulate the gift in the batch buffer.
+    // 3. Accumulate the gift in the batch buffer with coin source data.
     // ------------------------------------------------------------------
-    const pendingTxId = randomUUID();
-    const battleKind: "v1" | "v2" = battleGiftTarget.sideId ? "v2" : "v1";
-
     this.giftBatch.accumulate({
       battleId: battleGiftTarget.battleId,
       battleKind,
@@ -1002,6 +1020,7 @@ export class EconomyService {
       },
       quantity,
       pendingTxId,
+      giftCoinSourceIds,
     });
 
     // ------------------------------------------------------------------
@@ -1023,7 +1042,9 @@ export class EconomyService {
         });
       }
     } catch (e) {
-      console.warn("[EconomyService] deferred battle score update failed:", e);
+      console.error("[EconomyService] deferred battle score update failed:", e);
+      // Re-throw so the caller can observe and handle the failure
+      throw e;
     }
 
     // ------------------------------------------------------------------
@@ -1144,15 +1165,8 @@ export class EconomyService {
     }
 
     // ------------------------------------------------------------------
-    // DEFERRED BATTLE GIFT PATH
-    // When a gift targets an active battle side, use the batch accumulator
-    // instead of writing individual DB records. Coins and diamonds are
-    // updated immediately; the GiftTransaction is committed at battle end.
+    // IDEMPOTENCY CHECK (applies to both deferred and immediate paths)
     // ------------------------------------------------------------------
-    if (battleGiftTarget) {
-      return this.sendGiftDuringBattle(input, battleGiftTarget);
-    }
-
     if (idempotencyKey) {
       const existing = await this.prisma.giftTransaction.findUnique({
         where: {
@@ -1184,6 +1198,7 @@ export class EconomyService {
           ok: true as const,
           idempotent: true,
           txId: existing.id,
+          deferred: !!battleGiftTarget,
           quantity,
           totalCoinCost: existing.coinCost,
           totalDiamondValue: existing.diamondValue,
@@ -1199,6 +1214,17 @@ export class EconomyService {
       }
     }
 
+    // ------------------------------------------------------------------
+    // DEFERRED BATTLE GIFT PATH
+    // When a gift targets an active battle side, use the batch accumulator
+    // instead of writing individual DB records. Coins and diamonds are
+    // updated immediately; the GiftTransaction is committed at battle end.
+    // ------------------------------------------------------------------
+    if (battleGiftTarget) {
+      return this.sendGiftDuringBattle(input, battleGiftTarget);
+    }
+
+    // Idempotency for non-deferred path already checked above
     await this.ensureWallet(senderUserId);
     await this.ensureWallet(recipientUserId);
 

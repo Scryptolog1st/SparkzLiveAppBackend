@@ -48,6 +48,8 @@ export type AccumulateGiftParams = {
   quantity: number;
   /** Pending UUID returned to the client while the real transaction is deferred. */
   pendingTxId: string;
+  /** IDs of committed GiftCoinSource rows for lot-level accounting. */
+  giftCoinSourceIds?: string[];
 };
 
 type PendingEntry = {
@@ -64,6 +66,8 @@ type PendingEntry = {
   firstPendingTxId: string;
   createdAt: Date;
   updatedAt: Date;
+  /** Accumulated IDs of committed GiftCoinSource rows across all batched sends. */
+  giftCoinSourceIds: string[];
 };
 
 // ---------------------------------------------------------------------------
@@ -112,6 +116,9 @@ export class GiftBatchService {
       existing.totalCoinCost += totalCoinCost;
       existing.totalDiamondValue += totalDiamondValue;
       existing.updatedAt = now;
+      if (params.giftCoinSourceIds) {
+        existing.giftCoinSourceIds.push(...params.giftCoinSourceIds);
+      }
     } else {
       this.pending.set(key, {
         battleId: params.battleId,
@@ -127,6 +134,7 @@ export class GiftBatchService {
         firstPendingTxId: params.pendingTxId,
         createdAt: now,
         updatedAt: now,
+        giftCoinSourceIds: params.giftCoinSourceIds ?? [],
       });
     }
   }
@@ -204,7 +212,7 @@ export class GiftBatchService {
   /** Commit one aggregated entry to the database. */
   private async commitEntry(
     entry: PendingEntry,
-    config: CreatorEarningsConfig,
+    config: CreatorEarningsConfigLocal,
   ): Promise<void> {
     const giftTxId = randomUUID();
 
@@ -335,7 +343,7 @@ export class GiftBatchService {
       data: {
         streamerUserId: entry.recipientUserId,
         giftTxId,
-        giftCoinSourceId: null,
+        giftCoinSourceId: entry.giftCoinSourceIds[0],
 
         diamondsEarned: entry.totalDiamondValue,
         coinsSourceUsed: entry.totalCoinCost,
@@ -384,19 +392,25 @@ export class GiftBatchService {
           `gift=${entry.gift.id} qty=${entry.quantity} ` +
           `coins=${entry.totalCoinCost} diamonds=${entry.totalDiamondValue}`,
         );
-        this.pending.delete(key);
-        // Attempt async flush so the financial records are eventually created.
-        void this.commitStaleEntry(entry);
+        // Attempt async flush first before deleting from pending.
+        // On failure, re-insert the entry so it can be retried.
+        this.commitStaleEntry(entry, key).catch((err) => {
+          console.error("[GiftBatch] Failed to commit stale entry, re-inserting:", err);
+          this.pending.set(key, entry);
+        });
       }
     }
   }
 
-  private async commitStaleEntry(entry: PendingEntry): Promise<void> {
+  private async commitStaleEntry(entry: PendingEntry, key: string): Promise<void> {
     try {
       const config = await this.getCreatorEarningsConfig();
       await this.commitEntry(entry, config);
+      // Only delete after successful commit
+      this.pending.delete(key);
     } catch (err) {
       console.error("[GiftBatch] Failed to commit stale entry during sweep:", err);
+      throw err; // Re-throw so caller can handle re-insertion
     }
   }
 }
