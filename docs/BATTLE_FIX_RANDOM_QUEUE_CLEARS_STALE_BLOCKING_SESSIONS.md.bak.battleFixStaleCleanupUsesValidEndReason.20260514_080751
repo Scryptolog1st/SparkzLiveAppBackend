@@ -1,0 +1,35 @@
+# Battle Fix - Random Queue Clears Stale Blocking Sessions
+
+This patch fixes Random Queue being blocked by stale old generalized battle sessions.
+
+Problem:
+
+- Random Queue blocks hosts if any generalized battle session is in a blocking status.
+- Blocking statuses include ACTIVE, SUDDEN_DEATH, COOLDOWN, INVITING, REMATCH_ACTIVE, and related states.
+- If an old battle was tied, abandoned, skipped incorrectly, or tied in repeated sudden death, the host could remain blocked even after starting a new live stream.
+
+Patched file:
+
+- src/modules/battles/battles.service.ts
+
+Behavior added:
+
+- Before Random Queue rejects a host as busy, backend now:
+  - processes expired battle timers
+  - processes expired cooldowns
+  - checks the host's newest blocking generalized battle
+  - ends it as ABANDONED if all linked battle-side streams are no longer live
+- Real active battles on live linked streams still block Random Queue.
+- Blocking error now includes status and battle id for diagnosis.
+
+Intentionally not changed:
+
+- No mobile files.
+- No Prisma commands.
+- No database commands.
+- No Docker commands.
+- No Git commands.
+- No build commands.
+- No TypeScript command.
+
+Patch verification marker: BATTLE_FIX_RANDOM_QUEUE_CLEARS_STALE_BLOCKING_SESSIONS

@@ -1,0 +1,33 @@
+# Battle Stage 1B - Setup Options Contract
+
+This patch adds a read-only backend contract for the future mobile Battle modal.
+
+## Endpoint
+
+`GET /streams/:id/battles/setup-options`
+
+Requires JWT auth.
+
+## Purpose
+
+The endpoint gives mobile the battle setup rules without allowing local-only battle starts.
+
+It returns:
+
+- stream and host eligibility
+- supported battle types
+- direct invite timer options
+- random queue fixed duration
+- team invite rules
+- sudden death rules
+- unresolved product decisions
+
+## Important limits
+
+This does not create generalized battle rows yet.
+
+This does not run Prisma.
+
+This does not apply migrations.
+
+This does not expose the mobile Battle button yet.

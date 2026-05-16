@@ -1,0 +1,234 @@
+import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
+import type { Request } from "express";
+import { JwtAuthGuard } from "../auth/jwt/jwt-auth.guard";
+import { StreamsService } from "./streams.service";
+import { CreateStreamDto } from "./dto/create-stream.dto";
+import { UpdateGuestMediaDto } from "./dto/update-guest-media.dto";
+
+type JwtReq = Request & { user?: { userId: string; username?: string } };
+
+@Controller()
+export class StreamsController {
+  constructor(
+    private readonly streams: StreamsService,
+  ) { }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("/streams/:id/ping")
+  async pingPresence(@Req() req: JwtReq, @Param("id") id: string) {
+    return this.streams.recordPing(id, req.user!.userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("/streams/:id/audio-mode")
+  async updateAudioMode(
+    @Req() req: JwtReq,
+    @Param("id") id: string,
+    @Body() body: { isAudioOnly?: boolean },
+  ) {
+    return this.streams.updateAudioMode(id, req.user!.userId, !!body?.isAudioOnly);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("/streams")
+  async create(@Req() req: JwtReq, @Body() dto: CreateStreamDto) {
+    return this.streams.createStream({
+      hostUserId: req.user!.userId,
+      title: dto.title,
+      color: dto.color,
+      visibility: dto.visibility,
+      tags: dto.tags ?? [],
+      layoutGridSize: dto.layoutGridSize ?? dto.gridSize,
+      isAudioOnly: dto.isAudioOnly,
+    } as any);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("/streams/start")
+  async createWithVideo(@Req() req: JwtReq, @Body() dto: CreateStreamDto) {
+    return this.streams.createStreamWithVideo({
+      hostUserId: req.user!.userId,
+      title: dto.title,
+      color: dto.color,
+      visibility: dto.visibility,
+      tags: dto.tags ?? [],
+      layoutGridSize: dto.layoutGridSize ?? dto.gridSize,
+      isAudioOnly: dto.isAudioOnly,
+    } as any);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("/streams/:id/startup")
+  async startup(@Req() req: JwtReq, @Param("id") id: string) {
+    return this.streams.joinAndIssueVideoToken(id, req.user!.userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("/streams/:id/guest-box/leave")
+  async leaveGuestBox(@Req() req: JwtReq, @Param("id") id: string) {
+    return this.streams.leaveGuestBox(id, req.user!.userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("/streams/:id/guests/:guestUserId/remove")
+  async removeGuestFromBox(
+    @Req() req: JwtReq,
+    @Param("id") id: string,
+    @Param("guestUserId") guestUserId: string,
+  ) {
+    return this.streams.removeGuestFromBox(id, req.user!.userId, guestUserId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("/streams/:id/guests/:guestUserId/mute")
+  async updateGuestMedia(
+    @Req() req: JwtReq,
+    @Param("id") id: string,
+    @Param("guestUserId") guestUserId: string,
+    @Body() dto: UpdateGuestMediaDto,
+  ) {
+    return this.streams.updateGuestMediaState(id, guestUserId, dto, req.user!.userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("/streams/:id/verify-publish")
+  async verifyPublishPermissions(
+    @Req() req: JwtReq,
+    @Param("id") id: string,
+    @Body() body: { userId: string }
+  ) {
+    return this.streams.verifyPublishPermissions(id, req.user!.userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("/streams/:id/end")
+  async end(@Req() req: JwtReq, @Param("id") id: string) {
+    return this.streams.endStream(id, req.user!.userId);
+  }
+
+  @Get("/streams/live")
+  async live() {
+    return this.streams.listLive();
+  }
+
+  @Get("/streams/:id")
+  async byId(@Param("id") id: string) {
+    return this.streams.getStream(id);
+  }
+
+  @Get("/streams/:id/viewers")
+  async viewers(@Param("id") id: string) {
+    return this.streams.getViewerSnapshot(id);
+  }
+
+  @Get("/streams/:id/hearts")
+  async hearts(@Param("id") id: string) {
+    return this.streams.getHeartSnapshot(id);
+  }
+
+  @Get("/streams/:id/leaderboard")
+  async leaderboard(
+    @Param("id") id: string,
+    @Query("limit") limit?: string,
+    @Query("period") period?: string,
+  ) {
+    const parsedLimit = Number(limit);
+    return this.streams.getDiamondLeaderboard(
+      id,
+      Number.isFinite(parsedLimit) ? parsedLimit : 50,
+      period,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("/streams/:id/guest-requests")
+  async createGuestRequest(@Req() req: JwtReq, @Param("id") id: string) {
+    return this.streams.createGuestRequest(id, req.user!.userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get("/streams/:id/guest-requests")
+  async listGuestRequests(@Req() req: JwtReq, @Param("id") id: string) {
+    return this.streams.listGuestRequests(id, req.user!.userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("/streams/:id/guest-requests/:requestId/approve")
+  async approveGuestRequest(
+    @Req() req: JwtReq,
+    @Param("id") id: string,
+    @Param("requestId") requestId: string,
+  ) {
+    return this.streams.approveGuestRequest(id, requestId, req.user!.userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("/streams/:id/guest-requests/:requestId/deny")
+  async denyGuestRequest(
+    @Req() req: JwtReq,
+    @Param("id") id: string,
+    @Param("requestId") requestId: string,
+  ) {
+    return this.streams.denyGuestRequest(id, requestId, req.user!.userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("/streams/:id/join")
+  async join(@Req() req: JwtReq, @Param("id") id: string) {
+    return this.streams.join(id, req.user!.userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("/streams/:id/leave")
+  async leave(@Req() req: JwtReq, @Param("id") id: string) {
+    return this.streams.leave(id, req.user!.userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("/streams/:id/layout")
+  async updateLayout(
+    @Req() req: JwtReq,
+    @Param("id") id: string,
+    @Body() body: { layoutGridSize?: number; gridSize?: number },
+  ) {
+    return this.streams.updateLayout(
+      id,
+      req.user!.userId,
+      body?.layoutGridSize ?? body?.gridSize,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("/streams/:id/goal")
+  async updateGoal(
+    @Req() req: JwtReq,
+    @Param("id") id: string,
+    @Body() body: { streamGoal?: number },
+  ) {
+    return this.streams.updateStreamGoal(
+      id,
+      req.user!.userId,
+      body?.streamGoal,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("/streams/:id/pin")
+  async updatePinnedMessage(
+    @Req() req: JwtReq,
+    @Param("id") id: string,
+    @Body() body: { text?: string },
+  ) {
+    return this.streams.updatePinnedMessage(
+      id,
+      req.user!.userId,
+      body?.text,
+    );
+  }
+  @Get("streams/categories")
+  getStreamCategories() {
+    return this.streams.getPublicStreamCategories();
+  }
+
+
+}

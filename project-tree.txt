@@ -1,0 +1,660 @@
+backend
+├── Backend-backup
+├── certs
+│   └── apple
+│       ├── AppleIncRootCertificate.cer
+│       ├── AppleRootCA-G2.cer
+│       └── AppleRootCA-G3.cer
+├── docs
+│   ├── phase-13.3.0-preflight-notes.md
+│   ├── PHASE11_INSTALL.md
+│   ├── PHASE12_BATTLE_NOTIFICATIONS.md
+│   ├── PHASE12_EVENT_NOTIFICATIONS.md
+│   ├── PHASE12_INSTALL.md
+│   ├── PHASE12_MILESTONE_NOTIFICATIONS.md
+│   ├── PHASE13_1_STRIPE_WEBHOOK_500_DEBUG.md
+│   ├── PHASE13_1_STRIPE_WEBHOOKS.md
+│   ├── PHASE13_2_IAP_FOUNDATION.md
+│   ├── PHASE13_3_1_IAP_CONTRACT_TIGHTENING.md
+│   ├── PHASE13_3_2_APPLE_REAL_VERIFICATION.md
+│   ├── PHASE13_3_3_GOOGLE_REAL_VERIFICATION.md
+│   ├── PHASE13_PAYMENTS.md
+│   ├── PHASE13_PAYMENTS_HOTFIX.md
+│   ├── PHASE13_WIRE_MODULE.md
+│   ├── PHASE13_WIRE_MODULE_SAFE.md
+│   └── ROADMAP_phase11-implemented_2026-03-01.md
+├── prisma
+│   ├── migrations
+│   │   ├── 20260301000000_init
+│   │   │   └── migration.sql
+│   │   ├── 20260301003000_phase4_schedule_milestones
+│   │   │   └── migration.sql
+│   │   ├── 20260301020000_phase5_streams_presence
+│   │   │   └── migration.sql
+│   │   ├── 20260301023000_phase6_video_metadata
+│   │   │   └── migration.sql
+│   │   ├── 20260301030000_phase7_chat_messages
+│   │   │   └── migration.sql
+│   │   ├── 20260301103000_phase7_chat_messages
+│   │   │   └── migration.sql
+│   │   ├── 20260301105709_phase8_roles_moderation
+│   │   │   └── migration.sql
+│   │   ├── 20260301160000_phase9_economy
+│   │   │   └── migration.sql
+│   │   ├── 20260301180000_phase10_battles
+│   │   │   └── migration.sql
+│   │   ├── 20260301180000_phase8_roles_moderation
+│   │   │   └── migration.sql
+│   │   ├── 20260302053344_phase12_notifications
+│   │   │   └── migration.sql
+│   │   ├── 20260302071247_phase13_payments
+│   │   │   └── migration.sql
+│   │   ├── 20260302081755_phase13_2_iap_foundation
+│   │   │   └── migration.sql
+│   │   ├── 20260310170000_profile_wifw_username_publicid
+│   │   │   └── migration.sql
+│   │   ├── 20260311162000_phase14_favorites
+│   │   │   └── migration.sql
+│   │   ├── 20260317000000_baseline_sync
+│   │   │   └── migration.sql
+│   │   ├── 20260317000001_add_2fa_logic
+│   │   │   └── migration.sql
+│   │   ├── 20260318052754_add_2fa_backup_codes
+│   │   │   └── migration.sql
+│   │   ├── 20260318060945_enable_cascade_deletion
+│   │   │   └── migration.sql
+│   │   ├── 20260318064316_add_user_blocks
+│   │   │   └── migration.sql
+│   │   ├── 20260319143805_add_participant_composite_index
+│   │   │   └── migration.sql
+│   │   ├── 20260320190333_add_direct_messages
+│   │   │   └── migration.sql
+│   │   ├── 20260320191229_make_streamid_optional
+│   │   │   └── migration.sql
+│   │   ├── 20260322000000_resolve_drift
+│   │   │   └── migration.sql
+│   │   ├── 20260322083024_add_payout_economy
+│   │   │   └── migration.sql
+│   │   ├── 20260324033607_add_stream_color
+│   │   │   └── migration.sql
+│   │   ├── 20260326000000_notification_preferences
+│   │   │   └── migration.sql
+│   │   ├── 20260326010000_push_device_tokens
+│   │   │   └── migration.sql
+│   │   ├── 20260326211852_push_device_tokens
+│   │   │   └── migration.sql
+│   │   ├── 20260402001850_add_stream_goal
+│   │   │   └── migration.sql
+│   │   ├── 20260403120000_add_dev_coin_package_fields
+│   │   │   └── migration.sql
+│   │   ├── 20260403143000_add_coin_package_presentation_fields
+│   │   │   └── migration.sql
+│   │   ├── 20260404000100_add_profile_badge_fields
+│   │   │   └── migration.sql
+│   │   ├── 20260404120000_add_monthly_vip_system
+│   │   │   └── migration.sql
+│   │   ├── 20260406000100_add_admin_users
+│   │   │   └── migration.sql
+│   │   ├── 20260406022046_add_app_config_and_assets
+│   │   │   └── migration.sql
+│   │   ├── 20260406035403_added_pinned_messages
+│   │   │   └── migration.sql
+│   │   ├── 20260406130000_add_admin_users
+│   │   │   └── migration.sql
+│   │   ├── 20260406_add_user_last_login_at
+│   │   │   └── migration.sql
+│   │   ├── 20260408_005706_add_reports_system
+│   │   │   └── migration.sql
+│   │   ├── 20260411_add_admin_actor_refs_to_moderation
+│   │   │   └── migration.sql
+│   │   ├── 20260411_add_admin_role_permissions
+│   │   │   └── migration.sql
+│   │   ├── 20260411_add_admin_stream_termination_fields
+│   │   │   └── migration.sql
+│   │   ├── 20260411_add_chat_message_tombstones
+│   │   │   └── migration.sql
+│   │   ├── 20260412_platform_user_ban
+│   │   │   └── migration.sql
+│   │   ├── 20260413063707_add_ban_appeals
+│   │   │   └── migration.sql
+│   │   ├── 20260413_phase14_email_foundation
+│   │   │   └── migration.sql
+│   │   ├── 20260414000100_email_template_management
+│   │   │   └── migration.sql
+│   │   ├── 20260414_add_api_request_metric_buckets
+│   │   │   └── migration.sql
+│   │   ├── 20260415_add_system_log_events
+│   │   │   └── migration.sql
+│   │   ├── 20260416_add_admin_audit_logs
+│   │   │   └── migration.sql
+│   │   ├── 20260416_add_system_log_event_telemetry_fields
+│   │   │   └── migration.sql
+│   │   ├── 20260418180000_add_chat_mute_restrictions
+│   │   │   └── migration.sql
+│   │   ├── 20260418193000_add_stream_kicked_restriction
+│   │   │   └── migration.sql
+│   │   ├── 20260418_add_stream_staff_permissions
+│   │   │   └── migration.sql
+│   │   ├── 20260423210000_add_stream_is_audio_only
+│   │   │   └── migration.sql
+│   │   ├── 20260425000000_add_feed_posts
+│   │   │   └── migration.sql
+│   │   ├── 20260425000000_add_feed_posts_and_stories
+│   │   │   └── migration.sql
+│   │   ├── 20260425010000_seed_email_template_permissions
+│   │   │   └── migration.sql
+│   │   ├── 20260426162238_add_auditable_coin_gift_payout_ledger
+│   │   │   └── migration.sql
+│   │   ├── 20260427000100_dm_ad_requests
+│   │   │   └── migration.sql
+│   │   ├── 20260427003000_add_advertisements
+│   │   │   └── migration.sql
+│   │   ├── 20260427020500_rename_advertisement_admin_permissions
+│   │   │   └── migration.sql
+│   │   ├── 20260427024500_update_advertisement_dm_contact_rules
+│   │   │   └── migration.sql
+│   │   ├── 20260427035000_normalize_advertisement_cover_media
+│   │   │   └── migration.sql
+│   │   ├── 20260427160000_advertisement_boosts
+│   │   │   └── migration.sql
+│   │   ├── 20260427160000_separate_ad_job_dm_threads
+│   │   │   └── migration.sql
+│   │   ├── 20260427193000_advertisement_jobs_reviews
+│   │   │   └── migration.sql
+│   │   ├── 20260427210000_repeat_advertisement_jobs
+│   │   │   └── migration.sql
+│   │   ├── 20260428172000_add_ad_boost_promo_settings
+│   │   │   └── migration.sql
+│   │   ├── 20260428190000_add_advertisement_promo_settings
+│   │   │   └── migration.sql
+│   │   ├── 20260428213000_add_ad_creation_promo_free_flag
+│   │   │   └── migration.sql
+│   │   ├── 20260503143919_stream_options_order_persistence
+│   │   │   └── migration.sql
+│   │   ├── 20260504150928_add_gift_enabled_flag
+│   │   │   └── migration.sql
+│   │   ├── 20260504151113_add_gift_enabled_flag
+│   │   │   └── migration.sql
+│   │   ├── 20260504174854_in_app_alerts_system
+│   │   │   └── migration.sql
+│   │   ├── 20260504200139_add_gift_effect_size
+│   │   │   └── migration.sql
+│   │   ├── 20260506_230536_admin_user_badges_foundation
+│   │   │   └── migration.sql
+│   │   ├── 20260511_232142_backendGiftCoinLotCursorIndexPrep
+│   │   │   └── migration.sql
+│   │   ├── 20260512_014646_backendGiftAndStreamCategoriesFoundation
+│   │   │   └── migration.sql
+│   │   └── migration_lock.toml
+│   ├── PHASE12_schema_snippet.prisma
+│   ├── PHASE13_2_schema_snippet.prisma
+│   ├── PHASE13_schema_snippet.prisma
+│   ├── schema.prisma
+│   ├── schema.prisma.bak.backendCategorySchemaRelationPlacementFix.20260512_023202
+│   ├── schema.prisma.bak.backendGiftAndStreamCategoriesFoundation.20260512_015150
+│   ├── schema.prisma.bak.backendGiftCoinLotBoundedLocking.20260511_231350
+│   └── schema.prisma.bak.backendGiftCoinLotCursorIndexPrep.20260511_232142
+├── scripts
+│   ├── phase-13.3.0-backend-env-preflight.ps1
+│   ├── phase-13.3.0-mobile-preflight.ps1
+│   ├── phase11-smoke.ps1
+│   ├── phase12-smoke-battle-notification.ps1
+│   ├── phase12-smoke-gift-notification.ps1
+│   ├── phase12-smoke-milestone-notification.ps1
+│   ├── phase12-smoke.ps1
+│   ├── phase13-1-stripe-webhook-smoke.ps1
+│   ├── phase13-2-apply-schema.ps1
+│   ├── phase13-2-smoke-apple-iap.ps1
+│   ├── phase13-2-smoke-google-iap.ps1
+│   ├── phase13-3-1-add-iap-env.ps1
+│   ├── phase13-3-2-add-apple-lib.ps1
+│   ├── phase13-3-2-apple-real-contract-smoke.ps1
+│   ├── phase13-3-2-download-apple-root-certs.ps1
+│   ├── phase13-3-3-add-google-lib.ps1
+│   ├── phase13-3-3-google-real-contract-smoke.ps1
+│   ├── phase13-apply-schema.ps1
+│   ├── phase13-enable-rawbody.ps1
+│   ├── phase13-smoke.ps1
+│   ├── phase13-wire-payments-module-safe.ps1
+│   └── phase13-wire-payments-module.ps1
+├── src
+│   ├── common
+│   │   ├── dto
+│   │   │   ├── auth.dto.ts
+│   │   │   ├── economy.dto.ts
+│   │   │   ├── economy.dto.ts.bak.backendGiftHotPathRealtimeAndBatching.20260511_231135
+│   │   │   ├── economy.dto.ts.bak.backendLiveGiftQuantityCommonDtoFix.20260511_225034
+│   │   │   ├── economy.dto.ts.bak.backendLiveGiftQuantityTotals.20260511_223938
+│   │   │   ├── index.ts
+│   │   │   ├── profile.dto.ts
+│   │   │   ├── streams.dto.ts
+│   │   │   ├── user.dto.ts
+│   │   │   ├── ws-events.dto.ts
+│   │   │   ├── ws-events.dto.ts.bak.backendGiftHotPathRealtimeAndBatching.20260511_231135
+│   │   │   ├── ws-events.dto.ts.bak.backendLiveGiftQuantityTotals.20260511_223938
+│   │   │   └── ws-events.dto.ts.bak.giftSyncBackendAnimationStartAtOneSecond.20260507_144834
+│   │   └── guards
+│   │       └── rate-limit.guard.ts
+│   ├── config
+│   │   └── validation-limits.ts
+│   ├── modules
+│   │   ├── admin-advertisements
+│   │   │   ├── dto
+│   │   │   │   └── admin-advertisements.dto.ts
+│   │   │   ├── admin-advertisements.controller.ts
+│   │   │   ├── admin-advertisements.module.ts
+│   │   │   └── admin-advertisements.service.ts
+│   │   ├── admin-assets
+│   │   │   ├── dto
+│   │   │   │   └── admin-assets.dto.ts
+│   │   │   ├── admin-assets.controller.ts
+│   │   │   ├── admin-assets.module.ts
+│   │   │   └── admin-assets.service.ts
+│   │   ├── admin-audit
+│   │   │   ├── dto
+│   │   │   │   └── admin-audit-query.dto.ts
+│   │   │   ├── admin-audit.controller.ts
+│   │   │   ├── admin-audit.module.ts
+│   │   │   └── admin-audit.service.ts
+│   │   ├── admin-badges
+│   │   │   ├── dto
+│   │   │   │   └── admin-badges.dto.ts
+│   │   │   ├── admin-badges.controller.ts
+│   │   │   ├── admin-badges.module.ts
+│   │   │   └── admin-badges.service.ts
+│   │   ├── admin-chat
+│   │   │   ├── dto
+│   │   │   │   └── admin-chat.dto.ts
+│   │   │   ├── admin-chat.controller.ts
+│   │   │   ├── admin-chat.module.ts
+│   │   │   └── admin-chat.service.ts
+│   │   ├── admin-gifts
+│   │   │   ├── dto
+│   │   │   │   ├── admin-categories.dto.ts
+│   │   │   │   ├── admin-gifts.dto.ts
+│   │   │   │   └── admin-gifts.dto.ts.bak.backendGiftAndStreamCategoriesFoundation.20260512_015150
+│   │   │   ├── admin-categories.controller.ts
+│   │   │   ├── admin-gifts.controller.ts
+│   │   │   ├── admin-gifts.controller.ts.bak.backendGiftAndStreamCategoriesFoundation.20260512_015150
+│   │   │   ├── admin-gifts.module.ts
+│   │   │   ├── admin-gifts.module.ts.bak.backendGiftAndStreamCategoriesFoundation.20260512_015150
+│   │   │   ├── admin-gifts.module.ts.bak.backendGiftCatalogVersionInvalidation.20260511_214317
+│   │   │   ├── admin-gifts.module.ts.bak.backendGiftCatalogVersionInvalidationFinish.20260511_214642
+│   │   │   ├── admin-gifts.service.ts
+│   │   │   ├── admin-gifts.service.ts.bak.backendGiftAndStreamCategoriesFoundation.20260512_015150
+│   │   │   ├── admin-gifts.service.ts.bak.backendGiftAndStreamCategoriesFoundationFinish.20260512_020419
+│   │   │   ├── admin-gifts.service.ts.bak.backendGiftCatalogVersionInvalidation.20260511_214317
+│   │   │   ├── admin-gifts.service.ts.bak.backendGiftCatalogVersionInvalidationFinish.20260511_214642
+│   │   │   └── admin-gifts.service.ts.bak.backendGiftCatalogVersionInvalidationTscFix.20260511_215308
+│   │   ├── admin-overview
+│   │   │   ├── admin-overview.controller.ts
+│   │   │   ├── admin-overview.module.ts
+│   │   │   └── admin-overview.service.ts
+│   │   ├── admin-payouts
+│   │   │   ├── dto
+│   │   │   │   └── admin-payouts.dto.ts
+│   │   │   ├── admin-payouts.controller.ts
+│   │   │   ├── admin-payouts.module.ts
+│   │   │   └── admin-payouts.service.ts
+│   │   ├── admin-reports
+│   │   │   ├── dto
+│   │   │   │   └── admin-reports.dto.ts
+│   │   │   ├── admin-reports.controller.ts
+│   │   │   ├── admin-reports.module.ts
+│   │   │   └── admin-reports.service.ts
+│   │   ├── admin-store
+│   │   │   ├── dto
+│   │   │   │   ├── admin-store-query.dto.ts
+│   │   │   │   ├── create-admin-package.dto.ts
+│   │   │   │   └── update-admin-package.dto.ts
+│   │   │   ├── admin-store.controller.ts
+│   │   │   ├── admin-store.module.ts
+│   │   │   └── admin-store.service.ts
+│   │   ├── admin-streams
+│   │   │   ├── dto
+│   │   │   │   └── admin-streams.dto.ts
+│   │   │   ├── admin-streams.controller.ts
+│   │   │   ├── admin-streams.module.ts
+│   │   │   └── admin-streams.service.ts
+│   │   ├── admin-system
+│   │   │   ├── admin-system.controller.ts
+│   │   │   ├── admin-system.module.ts
+│   │   │   └── admin-system.service.ts
+│   │   ├── admin-users
+│   │   │   ├── dto
+│   │   │   │   ├── admin-role-permissions.dto.ts
+│   │   │   │   └── admin-users.dto.ts
+│   │   │   ├── admin-permission.guard.ts
+│   │   │   ├── admin-permissions.ts
+│   │   │   ├── admin-proxy.guard.ts
+│   │   │   ├── admin-role-permissions.controller.ts
+│   │   │   ├── admin-role-permissions.service.ts
+│   │   │   ├── admin-users.controller.ts
+│   │   │   ├── admin-users.controller.ts.bak-20260509_160138-manualUserEmailVerifyBackendPatch
+│   │   │   ├── admin-users.module.ts
+│   │   │   ├── admin-users.service.ts
+│   │   │   ├── admin-users.service.ts.bak-20260509_160138-manualUserEmailVerifyBackendPatch
+│   │   │   └── require-admin-permission.decorator.ts
+│   │   ├── advertisement-jobs
+│   │   │   ├── dto
+│   │   │   │   └── advertisement-jobs.dto.ts
+│   │   │   ├── advertisement-jobs.controller.ts
+│   │   │   ├── advertisement-jobs.module.ts
+│   │   │   └── advertisement-jobs.service.ts
+│   │   ├── advertisements
+│   │   │   ├── dto
+│   │   │   │   └── advertisements.dto.ts
+│   │   │   ├── advertisement-renewal.service.ts
+│   │   │   ├── advertisements.controller.ts
+│   │   │   ├── advertisements.module.ts
+│   │   │   └── advertisements.service.ts
+│   │   ├── api-observability
+│   │   │   ├── api-observability.interceptor.ts
+│   │   │   ├── api-observability.module.ts
+│   │   │   ├── api-observability.service.ts
+│   │   │   ├── api-route-inventory.service.ts
+│   │   │   └── system-log-events.service.ts
+│   │   ├── app-config
+│   │   │   ├── dto
+│   │   │   │   └── app-config.dto.ts
+│   │   │   ├── app-config.controller.ts
+│   │   │   ├── app-config.module.ts
+│   │   │   └── app-config.service.ts
+│   │   ├── auth
+│   │   │   ├── dto
+│   │   │   │   ├── login.dto.ts
+│   │   │   │   ├── logout.dto.ts
+│   │   │   │   ├── refresh.dto.ts
+│   │   │   │   └── signup.dto.ts
+│   │   │   ├── jwt
+│   │   │   │   ├── jwt-auth.guard.ts
+│   │   │   │   ├── jwt.strategy.ts
+│   │   │   │   └── optional-jwt-auth.guard.ts
+│   │   │   ├── 2fa.service.ts
+│   │   │   ├── auth.controller.ts
+│   │   │   ├── auth.module.ts
+│   │   │   └── auth.service.ts
+│   │   ├── automod-config
+│   │   │   ├── automod-config.controller.ts
+│   │   │   ├── automod-config.module.ts
+│   │   │   └── automod-config.service.ts
+│   │   ├── ban-appeals
+│   │   │   ├── dto
+│   │   │   │   └── ban-appeals.dto.ts
+│   │   │   ├── admin-ban-appeals.controller.ts
+│   │   │   ├── ban-appeals.controller.ts
+│   │   │   ├── ban-appeals.module.ts
+│   │   │   └── ban-appeals.service.ts
+│   │   ├── battles
+│   │   │   ├── dto
+│   │   │   │   └── create-battle.dto.ts
+│   │   │   ├── battles.controller.ts
+│   │   │   ├── battles.module.ts
+│   │   │   └── battles.service.ts
+│   │   ├── chat
+│   │   │   ├── dto
+│   │   │   │   └── send-chat-message.dto.ts
+│   │   │   ├── chat.controller.ts
+│   │   │   ├── chat.module.ts
+│   │   │   └── chat.service.ts
+│   │   ├── client-telemetry
+│   │   │   ├── dto
+│   │   │   │   └── ingest-client-telemetry.dto.ts
+│   │   │   ├── client-telemetry.controller.ts
+│   │   │   ├── client-telemetry.module.ts
+│   │   │   └── client-telemetry.service.ts
+│   │   ├── discovery
+│   │   │   ├── controllers
+│   │   │   │   ├── explore.controller.ts
+│   │   │   │   ├── leaderboards.controller.ts
+│   │   │   │   └── users-search.controller.ts
+│   │   │   ├── dto
+│   │   │   │   ├── explore.dto.ts
+│   │   │   │   ├── explore.dto.ts.bak.backendExploreCategoriesRawLookupFinish.20260512_203617
+│   │   │   │   ├── explore.dto.ts.bak.backendExploreLiveStreamCategories.20260512_203240
+│   │   │   │   ├── explore.dto.ts.bak.backendExploreLiveStreamCategoriesFinish.20260512_203518
+│   │   │   │   ├── explore.dto.ts.bak.backendExploreLiveStreamCategoriesFlexible.20260512_203412
+│   │   │   │   ├── leaderboards.dto.ts
+│   │   │   │   └── users-search.dto.ts
+│   │   │   ├── discovery.module.ts
+│   │   │   ├── discovery.service.ts
+│   │   │   ├── discovery.service.ts.bak.backendExploreCategoriesRawLookupFinish.20260512_203617
+│   │   │   ├── discovery.service.ts.bak.backendExploreCategoriesUuidTextHotfix.20260512_204000
+│   │   │   ├── discovery.service.ts.bak.backendExploreLiveStreamCategories.20260512_203240
+│   │   │   ├── discovery.service.ts.bak.backendExploreLiveStreamCategoriesFinish.20260512_203518
+│   │   │   └── discovery.service.ts.bak.backendExploreLiveStreamCategoriesFlexible.20260512_203412
+│   │   ├── dms
+│   │   │   ├── dto
+│   │   │   │   ├── dms.dto.ts
+│   │   │   │   ├── dms.dto.ts.bak.backendDmGiftIdempotency.20260511_222933
+│   │   │   │   └── dms.dto.ts.bak.backendDmGiftIdempotencyFinish.20260511_223204
+│   │   │   ├── dms.controller.ts
+│   │   │   ├── dms.module.ts
+│   │   │   ├── dms.service.ts
+│   │   │   ├── dms.service.ts.bak.backendDmGiftIdempotency.20260511_222933
+│   │   │   ├── dms.service.ts.bak.backendDmGiftIdempotencyFinish.20260511_223204
+│   │   │   └── dms.service.ts.bak.backendDmGiftIdempotencyScopeFix.20260511_223259
+│   │   ├── economy
+│   │   │   ├── dto
+│   │   │   │   ├── send-gift.dto.ts
+│   │   │   │   └── send-gift.dto.ts.bak.backendLiveGiftQuantityTotals.20260511_223938
+│   │   │   ├── catalog.ts
+│   │   │   ├── economy.controller.ts
+│   │   │   ├── economy.controller.ts.bak.backendLiveGiftQuantityTotals.20260511_223938
+│   │   │   ├── economy.controller.ts.bak.backendPublicGiftAndStreamCategories.20260512_025315
+│   │   │   ├── economy.module.ts
+│   │   │   ├── economy.service.ts
+│   │   │   ├── economy.service.ts.bak.backendGiftAndStreamCategoriesFoundation.20260512_015150
+│   │   │   ├── economy.service.ts.bak.backendGiftAndStreamCategoriesFoundationFinish.20260512_020419
+│   │   │   ├── economy.service.ts.bak.backendGiftCatalogVersionInvalidation.20260511_214317
+│   │   │   ├── economy.service.ts.bak.backendGiftCatalogVersionInvalidationFinish.20260511_214642
+│   │   │   ├── economy.service.ts.bak.backendGiftCatalogVersionInvalidationTscFix.20260511_215308
+│   │   │   ├── economy.service.ts.bak.backendGiftCoinLotBoundedLocking.20260511_231350
+│   │   │   ├── economy.service.ts.bak.backendGiftCoinLotBoundedLockingTypeFix.20260511_231807
+│   │   │   ├── economy.service.ts.bak.backendGiftCoinLotBoundedLockingTypeFix.20260511_231837
+│   │   │   ├── economy.service.ts.bak.backendGiftHotPathRealtimeAndBatching.20260511_231135
+│   │   │   ├── economy.service.ts.bak.backendLiveGiftQuantityTotals.20260511_223938
+│   │   │   ├── economy.service.ts.bak.backendPublicGiftAndStreamCategories.20260512_025315
+│   │   │   ├── economy.service.ts.bak.giftBackendRetryWalletWriteConflict.20260507_165550
+│   │   │   ├── economy.service.ts.bak.giftBackendRetryWalletWriteConflictFixed.20260507_165637
+│   │   │   └── economy.service.ts.bak.giftSyncBackendAnimationStartAtOneSecond.20260507_144834
+│   │   ├── email
+│   │   │   ├── dto
+│   │   │   │   └── admin-email.dto.ts
+│   │   │   ├── admin-email.controller.ts
+│   │   │   ├── email-admin.service.ts
+│   │   │   ├── email-crypto.service.ts
+│   │   │   ├── email-template-catalog.ts
+│   │   │   ├── email-template-definition.service.ts
+│   │   │   ├── email-template-renderer.service.ts
+│   │   │   ├── email-transport.service.ts
+│   │   │   ├── email.constants.ts
+│   │   │   ├── email.module.ts
+│   │   │   └── email.service.ts
+│   │   ├── favorites
+│   │   │   ├── dto
+│   │   │   │   └── bulk-unfavorite.dto.ts
+│   │   │   ├── favorites.controller.ts
+│   │   │   ├── favorites.module.ts
+│   │   │   └── favorites.service.ts
+│   │   ├── feed
+│   │   │   ├── dto
+│   │   │   │   └── feed.dto.ts
+│   │   │   ├── feed.controller.ts
+│   │   │   ├── feed.module.ts
+│   │   │   └── feed.service.ts
+│   │   ├── giphy
+│   │   │   ├── giphy.controller.ts
+│   │   │   ├── giphy.module.ts
+│   │   │   └── giphy.service.ts
+│   │   ├── health
+│   │   │   ├── health.controller.ts
+│   │   │   └── health.module.ts
+│   │   ├── in-app-alerts
+│   │   │   ├── dto
+│   │   │   │   └── in-app-alerts.dto.ts
+│   │   │   ├── in-app-alerts.controller.ts
+│   │   │   ├── in-app-alerts.module.ts
+│   │   │   └── in-app-alerts.service.ts
+│   │   ├── jobs
+│   │   │   ├── creator-earnings-release.service.ts
+│   │   │   ├── jobs.module.ts
+│   │   │   └── jobs.service.ts
+│   │   ├── liveops
+│   │   │   ├── dto
+│   │   │   │   └── liveops.dto.ts
+│   │   │   ├── liveops.controller.ts
+│   │   │   ├── liveops.module.ts
+│   │   │   └── liveops.service.ts
+│   │   ├── milestones
+│   │   │   ├── milestones.controller.ts
+│   │   │   ├── milestones.module.ts
+│   │   │   └── milestones.service.ts
+│   │   ├── moderation
+│   │   │   ├── dto
+│   │   │   │   ├── admin-moderation.dto.ts
+│   │   │   │   ├── assign-role.dto.ts
+│   │   │   │   └── moderation-target.dto.ts
+│   │   │   ├── admin-moderation.controller.ts
+│   │   │   ├── moderation.controller.ts
+│   │   │   ├── moderation.module.ts
+│   │   │   └── moderation.service.ts
+│   │   ├── notifications
+│   │   │   ├── dto
+│   │   │   │   ├── create-notification.dto.ts
+│   │   │   │   └── notifications.dto.ts
+│   │   │   ├── notifications.controller.ts
+│   │   │   ├── notifications.module.ts
+│   │   │   └── notifications.service.ts
+│   │   ├── payments
+│   │   │   ├── dto
+│   │   │   │   ├── apple-iap-verify.dto.ts
+│   │   │   │   ├── create-purchase-order.dto.ts
+│   │   │   │   ├── create-stripe-order.dto.ts
+│   │   │   │   ├── fulfill-purchase.dto.ts
+│   │   │   │   └── google-iap-verify.dto.ts
+│   │   │   ├── iap
+│   │   │   │   └── iap.controller.ts
+│   │   │   ├── stripe
+│   │   │   │   ├── stripe-signature.util.ts
+│   │   │   │   └── stripe-webhooks.controller.ts
+│   │   │   ├── payments.controller.ts
+│   │   │   ├── payments.module.ts
+│   │   │   └── payments.service.ts
+│   │   ├── payouts
+│   │   │   ├── payouts.controller.ts
+│   │   │   ├── payouts.module.ts
+│   │   │   └── payouts.service.ts
+│   │   ├── prisma
+│   │   │   ├── prisma.module.ts
+│   │   │   └── prisma.service.ts
+│   │   ├── profiles
+│   │   │   ├── dto
+│   │   │   │   └── update-profile.dto.ts
+│   │   │   ├── profiles.controller.ts
+│   │   │   └── profiles.module.ts
+│   │   ├── realtime
+│   │   │   ├── presence.service.ts
+│   │   │   ├── realtime.gateway.ts
+│   │   │   ├── realtime.gateway.ts.bak.backendGiftCatalogVersionInvalidation.20260511_214317
+│   │   │   ├── realtime.gateway.ts.bak.backendGiftCatalogVersionInvalidationFinish.20260511_214642
+│   │   │   ├── realtime.gateway.ts.bak.backendGiftCategoryRealtimeReasonTypeFix.20260512_020759
+│   │   │   ├── realtime.gateway.ts.bak.giftSyncBackendRoomOnlyGiftSent.20260507_143219
+│   │   │   └── realtime.module.ts
+│   │   ├── reports
+│   │   │   ├── dto
+│   │   │   │   └── create-report.dto.ts
+│   │   │   ├── reports.controller.ts
+│   │   │   ├── reports.module.ts
+│   │   │   └── reports.service.ts
+│   │   ├── schedule
+│   │   │   ├── dto
+│   │   │   │   └── schedule-item.dto.ts
+│   │   │   ├── schedule.controller.ts
+│   │   │   ├── schedule.module.ts
+│   │   │   └── schedule.service.ts
+│   │   ├── stories
+│   │   │   ├── dto
+│   │   │   │   └── stories.dto.ts
+│   │   │   ├── stories.controller.ts
+│   │   │   ├── stories.module.ts
+│   │   │   └── stories.service.ts
+│   │   ├── stream-staff
+│   │   │   ├── dto
+│   │   │   │   ├── assign-stream-staff-role.dto.ts
+│   │   │   │   └── update-stream-staff-permissions.dto.ts
+│   │   │   ├── stream-staff.constants.ts
+│   │   │   ├── stream-staff.controller.ts
+│   │   │   ├── stream-staff.module.ts
+│   │   │   └── stream-staff.service.ts
+│   │   ├── streams
+│   │   │   ├── dto
+│   │   │   │   ├── create-stream.dto.ts
+│   │   │   │   ├── create-stream.dto.ts.bak.backendPersistStreamCategoryOnCreate.20260512_042515
+│   │   │   │   ├── create-stream.dto.ts.bak.backendPersistStreamCategoryServiceFinish.20260512_043506
+│   │   │   │   ├── create-stream.dto.ts.bak.backendStreamCategoryDtoWhitelistFix.20260512_045017
+│   │   │   │   └── update-guest-media.dto.ts
+│   │   │   ├── streams.controller.ts
+│   │   │   ├── streams.controller.ts.bak.backendPersistStreamCategoryOnCreate.20260512_042515
+│   │   │   ├── streams.controller.ts.bak.backendPersistStreamCategoryServiceFinish.20260512_043506
+│   │   │   ├── streams.controller.ts.bak.backendPublicGiftAndStreamCategories.20260512_025315
+│   │   │   ├── streams.controller.ts.bak.backendPublicStreamCategoriesFullPathFix.20260512_033457
+│   │   │   ├── streams.controller.ts.bak.backendPublicStreamCategoriesRouteOrderFix.20260512_031039
+│   │   │   ├── streams.controller.ts.bak.backendStreamCategoriesBeforeDynamicRoutes.20260512_035556
+│   │   │   ├── streams.controller.ts.bak.backendStreamCategoryDtoWhitelistFix.20260512_045017
+│   │   │   ├── streams.module.ts
+│   │   │   ├── streams.service.ts
+│   │   │   ├── streams.service.ts.bak.backendPersistStreamCategoryOnCreate.20260512_042515
+│   │   │   ├── streams.service.ts.bak.backendPersistStreamCategoryServiceFinish.20260512_043506
+│   │   │   ├── streams.service.ts.bak.backendPublicGiftAndStreamCategories.20260512_025315
+│   │   │   ├── streams.service.ts.bak.backendRemoveInvalidStreamTagsCreateField.20260512_044338
+│   │   │   ├── streams.service.ts.bak.backendStreamCategoryDtoWhitelistFix.20260512_045017
+│   │   │   └── streams.service.ts.bak.backendStreamTagsJsonRelationCreateFix.20260512_044448
+│   │   ├── uploads
+│   │   │   ├── uploads.controller.ts
+│   │   │   └── uploads.module.ts
+│   │   ├── users
+│   │   │   ├── me.controller.ts
+│   │   │   ├── users.module.ts
+│   │   │   └── users.service.ts
+│   │   ├── version
+│   │   │   ├── version.controller.ts
+│   │   │   └── version.module.ts
+│   │   └── video
+│   │       ├── providers
+│   │       │   ├── livekit.adapter.ts
+│   │       │   └── video-provider.adapter.ts
+│   │       ├── video.controller.ts
+│   │       ├── video.module.ts
+│   │       ├── video.service.ts
+│   │       └── video.types.ts
+│   ├── settings
+│   │   ├── env.validate.ts
+│   │   └── env.validate.ts.bak.backendAddGiphyProxy.20260509_182544
+│   ├── types
+│   │   └── email-template-libs.d.ts
+│   ├── app.module.ts
+│   ├── app.module.ts.bak.backendAddGiphyProxy.20260509_182544
+│   ├── app.module.ts.bak.backendGiftAndStreamCategoriesFoundation.20260512_015150
+│   └── main.ts
+├── test
+│   ├── auth.e2e-spec.ts
+│   ├── health.e2e-spec.ts
+│   └── jest-e2e.json
+├── Dockerfile
+├── jest.config.js
+├── liveapp_before_coin_package_presentation_fields.sql
+├── nest-cli.json
+├── package-lock.json
+├── package.json
+├── pre_prisma_migration_backup.sql
+├── pre_vip_migration_backup.sql
+├── sparkzlive_backend_backendExploreCategoriesRawLookupFinish_20260512_203617.txt
+├── sparkzlive_backend_backendExploreCategoriesUuidTextHotfix_20260512_204000.txt
+├── sparkzlive_backend_backendExploreLiveStreamCategories_20260512_203240.txt
+├── sparkzlive_backend_backendExploreLiveStreamCategoriesFinish_20260512_203518.txt
+├── sparkzlive_backend_backendExploreLiveStreamCategoriesFlexible_20260512_203412.txt
+├── sparkzlive_backend_backendStreamCategoryDtoWhitelistFix_20260512_045017.txt
+├── sparkzlive_backend_backendStreamCategoryFeedDiagnostic_20260512_202936.txt
+├── tsconfig.json
+└── write_project_tree.py

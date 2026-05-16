@@ -1,0 +1,37 @@
+// ================================
+// Phase 12 — Notifications (SNIPPET)
+// Paste this into your prisma/schema.prisma
+// ================================
+
+enum NotificationType {
+  SYSTEM
+  STREAM_STARTED
+  GIFT_RECEIVED
+  MILESTONE_REACHED
+  BATTLE_ENDED
+  MODERATION
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  userId      String
+  type        NotificationType
+  title       String?
+  body        String?
+  payloadJson Json             @default("{}")
+  createdAt   DateTime         @default(now())
+  readAt      DateTime?
+
+  // Optional linking for UI deep-links
+  streamId    String?
+
+  // Simple dedupe hook: set this when you want "only one of this kind"
+  dedupeKey   String?
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+  @@index([streamId])
+
+  // If you want strict dedupe later, uncomment and ensure dedupeKey is always set for deduped types:
+  // @@unique([userId, dedupeKey])
+}

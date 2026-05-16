@@ -1,0 +1,336 @@
+import type { AdminRole } from "@prisma/client";
+
+export const ADMIN_PERMISSIONS = {
+    LIVE_VIEW: "moderation.live.view",
+    STREAMS_VIEW: "moderation.streams.view",
+    STREAMS_TERMINATE: "moderation.streams.terminate",
+
+    CHAT_VIEW: "moderation.chat.view",
+    CHAT_DELETE: "moderation.chat.delete",
+    CHAT_BULK_DELETE: "moderation.chat.bulk_delete",
+
+    REPORTS_VIEW: "moderation.reports.view",
+    REPORTS_ASSIGN: "moderation.reports.assign",
+    REPORTS_NOTE: "moderation.reports.note",
+    REPORTS_RESOLVE: "moderation.reports.resolve",
+    REPORTS_BULK_UPDATE: "moderation.reports.bulk_update",
+
+    BAN_APPEALS_VIEW: "moderation.ban_appeals.view",
+    BAN_APPEALS_REVIEW: "moderation.ban_appeals.review",
+
+    AUTOMOD_VIEW: "moderation.automod.view",
+    AUTOMOD_EDIT: "moderation.automod.edit",
+
+    MOD_ACTIONS_VIEW: "moderation.actions.view",
+    MOD_RESTRICTIONS_VIEW: "moderation.restrictions.view",
+
+    USERS_VIEW: "admin.users.view",
+
+    ADMIN_ACCOUNTS_VIEW: "admin.accounts.view",
+    ADMIN_ACCOUNTS_MANAGE: "admin.accounts.manage",
+
+    PERMISSIONS_VIEW: "admin.permissions.view",
+    PERMISSIONS_MANAGE: "admin.permissions.manage",
+
+    SYSTEM_VIEW: "system.view",
+    SYSTEM_MANAGE: "system.manage",
+
+    AUDIT_LOGS_VIEW: "audit.logs.view",
+    AUDIT_LOGS_EXPORT: "audit.logs.export",
+
+    EMAIL_SMTP_VIEW: "email.smtp.view",
+    EMAIL_SMTP_MANAGE: "email.smtp.manage",
+
+    EMAIL_TEMPLATES_VIEW: "email.templates.view",
+    EMAIL_TEMPLATES_MANAGE: "email.templates.manage",
+    EMAIL_TEMPLATES_CREATE: "email.templates.create",
+    EMAIL_TEMPLATES_EDIT: "email.templates.edit",
+    EMAIL_TEMPLATES_PUBLISH: "email.templates.publish",
+    EMAIL_TEMPLATES_ARCHIVE: "email.templates.archive",
+    EMAIL_TEMPLATES_PREVIEW: "email.templates.preview",
+    EMAIL_TEMPLATES_SEND_TEST: "email.templates.send_test",
+
+    EMAIL_LOGS_VIEW: "email.logs.view",
+    EMAIL_LOGS_RETRY: "email.logs.retry",
+    EMAIL_SEND_MANUAL: "email.send.manual",
+    EMAIL_SETTINGS_VIEW: "email.settings.view",
+    EMAIL_SETTINGS_MANAGE: "email.settings.manage",
+    EMAIL_MARKETING_MANAGE: "email.marketing.manage",
+
+    ADMIN_STORE_VIEW: "store.admin.view",
+    ADMIN_STORE_MANAGE: "store.admin.manage",
+
+    ADMIN_ADVERT_VIEW: "admin.advert.view",
+    ADMIN_ADVERT_MANAGE: "admin.advert.manage",
+    IN_APP_ALERTS_VIEW: "in_app_alerts.view",
+    IN_APP_ALERTS_MANAGE: "in_app_alerts.manage",
+    USER_BADGES_VIEW: "user_badges.view",
+    USER_BADGES_MANAGE: "user_badges.manage",
+
+    PAYOUTS_VIEW: "payouts.view",
+    PAYOUTS_PROCESS: "payouts.process",
+    PAYOUTS_APPROVE: "payouts.approve",
+    PAYOUTS_REJECT: "payouts.reject",
+    PAYOUTS_FAIL_RELEASE: "payouts.fail_release",
+
+    CREATOR_EARNINGS_VIEW: "creator_earnings.view",
+    CREATOR_EARNINGS_MANAGE: "creator_earnings.manage",
+    CREATOR_EARNINGS_REVERSE: "creator_earnings.reverse",
+    CREATOR_EARNINGS_RELEASE: "creator_earnings.release",
+
+    PAYOUT_METHODS_VIEW: "payout_methods.view",
+    PAYOUT_METHODS_MANAGE: "payout_methods.manage",
+} as const;
+
+export type AdminPermission =
+    (typeof ADMIN_PERMISSIONS)[keyof typeof ADMIN_PERMISSIONS];
+
+export const ALL_ADMIN_PERMISSIONS: AdminPermission[] = Object.values(
+    ADMIN_PERMISSIONS,
+);
+
+export const ADMIN_PERMISSION_LABELS: Record<AdminPermission, string> = {
+    [ADMIN_PERMISSIONS.LIVE_VIEW]: "View live moderation",
+    [ADMIN_PERMISSIONS.STREAMS_VIEW]: "View streams",
+    [ADMIN_PERMISSIONS.STREAMS_TERMINATE]: "Terminate streams",
+
+    [ADMIN_PERMISSIONS.CHAT_VIEW]: "View chat",
+    [ADMIN_PERMISSIONS.CHAT_DELETE]: "Delete chat messages",
+    [ADMIN_PERMISSIONS.CHAT_BULK_DELETE]: "Bulk delete chat messages",
+
+    [ADMIN_PERMISSIONS.REPORTS_VIEW]: "View reports",
+    [ADMIN_PERMISSIONS.REPORTS_ASSIGN]: "Assign reports",
+    [ADMIN_PERMISSIONS.REPORTS_NOTE]: "Add report notes",
+    [ADMIN_PERMISSIONS.REPORTS_RESOLVE]: "Resolve reports",
+    [ADMIN_PERMISSIONS.REPORTS_BULK_UPDATE]: "Bulk update reports",
+
+    [ADMIN_PERMISSIONS.BAN_APPEALS_VIEW]: "View ban appeals",
+    [ADMIN_PERMISSIONS.BAN_APPEALS_REVIEW]: "Review ban appeals",
+
+    [ADMIN_PERMISSIONS.AUTOMOD_VIEW]: "View automod settings",
+    [ADMIN_PERMISSIONS.AUTOMOD_EDIT]: "Edit automod settings",
+
+    [ADMIN_PERMISSIONS.MOD_ACTIONS_VIEW]: "View moderation actions",
+    [ADMIN_PERMISSIONS.MOD_RESTRICTIONS_VIEW]: "View moderation restrictions",
+
+    [ADMIN_PERMISSIONS.USERS_VIEW]: "View users",
+
+    [ADMIN_PERMISSIONS.ADMIN_ACCOUNTS_VIEW]: "View admin accounts",
+    [ADMIN_PERMISSIONS.ADMIN_ACCOUNTS_MANAGE]: "Manage admin accounts",
+
+    [ADMIN_PERMISSIONS.PERMISSIONS_VIEW]: "View admin permissions",
+    [ADMIN_PERMISSIONS.PERMISSIONS_MANAGE]: "Manage admin permissions",
+
+    [ADMIN_PERMISSIONS.SYSTEM_VIEW]: "View system settings",
+    [ADMIN_PERMISSIONS.SYSTEM_MANAGE]: "Manage system settings",
+
+    [ADMIN_PERMISSIONS.AUDIT_LOGS_VIEW]: "View audit logs",
+    [ADMIN_PERMISSIONS.AUDIT_LOGS_EXPORT]: "Export audit logs",
+
+    [ADMIN_PERMISSIONS.EMAIL_SMTP_VIEW]: "View SMTP accounts",
+    [ADMIN_PERMISSIONS.EMAIL_SMTP_MANAGE]: "Manage SMTP accounts",
+
+    [ADMIN_PERMISSIONS.EMAIL_TEMPLATES_VIEW]: "View email templates",
+    [ADMIN_PERMISSIONS.EMAIL_TEMPLATES_MANAGE]: "Manage email templates",
+    [ADMIN_PERMISSIONS.EMAIL_TEMPLATES_CREATE]: "Create email templates",
+    [ADMIN_PERMISSIONS.EMAIL_TEMPLATES_EDIT]: "Edit email templates",
+    [ADMIN_PERMISSIONS.EMAIL_TEMPLATES_PUBLISH]: "Publish email templates",
+    [ADMIN_PERMISSIONS.EMAIL_TEMPLATES_ARCHIVE]: "Archive email templates",
+    [ADMIN_PERMISSIONS.EMAIL_TEMPLATES_PREVIEW]: "Preview email templates",
+    [ADMIN_PERMISSIONS.EMAIL_TEMPLATES_SEND_TEST]: "Send test email templates",
+
+    [ADMIN_PERMISSIONS.EMAIL_LOGS_VIEW]: "View email logs",
+    [ADMIN_PERMISSIONS.EMAIL_LOGS_RETRY]: "Retry email deliveries",
+    [ADMIN_PERMISSIONS.EMAIL_SEND_MANUAL]: "Send manual emails",
+    [ADMIN_PERMISSIONS.EMAIL_SETTINGS_VIEW]: "View email settings",
+    [ADMIN_PERMISSIONS.EMAIL_SETTINGS_MANAGE]: "Manage email settings",
+    [ADMIN_PERMISSIONS.EMAIL_MARKETING_MANAGE]: "Manage marketing email",
+
+    [ADMIN_PERMISSIONS.ADMIN_STORE_VIEW]: "View admin store",
+    [ADMIN_PERMISSIONS.ADMIN_STORE_MANAGE]: "Manage admin store",
+
+    [ADMIN_PERMISSIONS.ADMIN_ADVERT_VIEW]: "View advertisements",
+    [ADMIN_PERMISSIONS.ADMIN_ADVERT_MANAGE]: "Manage advertisements",
+    [ADMIN_PERMISSIONS.IN_APP_ALERTS_VIEW]: "View in-app alerts",
+    [ADMIN_PERMISSIONS.IN_APP_ALERTS_MANAGE]: "Manage in-app alerts",
+    [ADMIN_PERMISSIONS.USER_BADGES_VIEW]: "View user badges",
+    [ADMIN_PERMISSIONS.USER_BADGES_MANAGE]: "Manage user badges",
+
+    [ADMIN_PERMISSIONS.PAYOUTS_VIEW]: "View payouts",
+    [ADMIN_PERMISSIONS.PAYOUTS_PROCESS]: "Mark payouts processing",
+    [ADMIN_PERMISSIONS.PAYOUTS_APPROVE]: "Approve payouts",
+    [ADMIN_PERMISSIONS.PAYOUTS_REJECT]: "Reject payouts",
+    [ADMIN_PERMISSIONS.PAYOUTS_FAIL_RELEASE]: "Fail payouts and release earnings",
+
+    [ADMIN_PERMISSIONS.CREATOR_EARNINGS_VIEW]: "View creator earnings",
+    [ADMIN_PERMISSIONS.CREATOR_EARNINGS_MANAGE]: "Manage creator earnings settings",
+    [ADMIN_PERMISSIONS.CREATOR_EARNINGS_REVERSE]: "Reverse creator earnings",
+    [ADMIN_PERMISSIONS.CREATOR_EARNINGS_RELEASE]: "Release creator earnings",
+
+    [ADMIN_PERMISSIONS.PAYOUT_METHODS_VIEW]: "View payout methods",
+    [ADMIN_PERMISSIONS.PAYOUT_METHODS_MANAGE]: "Manage payout methods",
+};
+
+export const DEFAULT_ROLE_PERMISSION_MAP: Record<AdminRole, AdminPermission[]> = {
+    SUPER_ADMIN: [...ALL_ADMIN_PERMISSIONS],
+
+    ADMIN: [
+        ADMIN_PERMISSIONS.LIVE_VIEW,
+        ADMIN_PERMISSIONS.STREAMS_VIEW,
+        ADMIN_PERMISSIONS.STREAMS_TERMINATE,
+
+        ADMIN_PERMISSIONS.CHAT_VIEW,
+        ADMIN_PERMISSIONS.CHAT_DELETE,
+        ADMIN_PERMISSIONS.CHAT_BULK_DELETE,
+
+        ADMIN_PERMISSIONS.REPORTS_VIEW,
+        ADMIN_PERMISSIONS.REPORTS_ASSIGN,
+        ADMIN_PERMISSIONS.REPORTS_NOTE,
+        ADMIN_PERMISSIONS.REPORTS_RESOLVE,
+        ADMIN_PERMISSIONS.REPORTS_BULK_UPDATE,
+
+        ADMIN_PERMISSIONS.BAN_APPEALS_VIEW,
+        ADMIN_PERMISSIONS.BAN_APPEALS_REVIEW,
+
+        ADMIN_PERMISSIONS.AUTOMOD_VIEW,
+        ADMIN_PERMISSIONS.AUTOMOD_EDIT,
+
+        ADMIN_PERMISSIONS.MOD_ACTIONS_VIEW,
+        ADMIN_PERMISSIONS.MOD_RESTRICTIONS_VIEW,
+
+        ADMIN_PERMISSIONS.USERS_VIEW,
+
+        ADMIN_PERMISSIONS.ADMIN_ACCOUNTS_VIEW,
+        ADMIN_PERMISSIONS.PERMISSIONS_VIEW,
+        ADMIN_PERMISSIONS.SYSTEM_VIEW,
+        ADMIN_PERMISSIONS.SYSTEM_MANAGE,
+
+        ADMIN_PERMISSIONS.AUDIT_LOGS_VIEW,
+        ADMIN_PERMISSIONS.AUDIT_LOGS_EXPORT,
+
+        ADMIN_PERMISSIONS.EMAIL_SMTP_VIEW,
+        ADMIN_PERMISSIONS.EMAIL_SMTP_MANAGE,
+
+        ADMIN_PERMISSIONS.EMAIL_SETTINGS_VIEW,
+        ADMIN_PERMISSIONS.EMAIL_SETTINGS_MANAGE,
+
+        ADMIN_PERMISSIONS.EMAIL_TEMPLATES_VIEW,
+        ADMIN_PERMISSIONS.EMAIL_TEMPLATES_MANAGE,
+        ADMIN_PERMISSIONS.EMAIL_TEMPLATES_CREATE,
+        ADMIN_PERMISSIONS.EMAIL_TEMPLATES_EDIT,
+        ADMIN_PERMISSIONS.EMAIL_TEMPLATES_PUBLISH,
+        ADMIN_PERMISSIONS.EMAIL_TEMPLATES_ARCHIVE,
+        ADMIN_PERMISSIONS.EMAIL_TEMPLATES_PREVIEW,
+        ADMIN_PERMISSIONS.EMAIL_TEMPLATES_SEND_TEST,
+
+        ADMIN_PERMISSIONS.EMAIL_LOGS_VIEW,
+        ADMIN_PERMISSIONS.EMAIL_LOGS_RETRY,
+        ADMIN_PERMISSIONS.EMAIL_SEND_MANUAL,
+        ADMIN_PERMISSIONS.EMAIL_MARKETING_MANAGE,
+
+        ADMIN_PERMISSIONS.ADMIN_STORE_VIEW,
+        ADMIN_PERMISSIONS.ADMIN_STORE_MANAGE,
+
+        ADMIN_PERMISSIONS.ADMIN_ADVERT_VIEW,
+        ADMIN_PERMISSIONS.IN_APP_ALERTS_VIEW,
+        ADMIN_PERMISSIONS.ADMIN_ADVERT_MANAGE,
+        ADMIN_PERMISSIONS.IN_APP_ALERTS_VIEW,
+        ADMIN_PERMISSIONS.IN_APP_ALERTS_MANAGE,
+        ADMIN_PERMISSIONS.USER_BADGES_VIEW,
+        ADMIN_PERMISSIONS.USER_BADGES_MANAGE,
+
+        ADMIN_PERMISSIONS.PAYOUTS_VIEW,
+        ADMIN_PERMISSIONS.PAYOUTS_PROCESS,
+        ADMIN_PERMISSIONS.PAYOUTS_APPROVE,
+        ADMIN_PERMISSIONS.PAYOUTS_REJECT,
+        ADMIN_PERMISSIONS.PAYOUTS_FAIL_RELEASE,
+
+        ADMIN_PERMISSIONS.CREATOR_EARNINGS_VIEW,
+        ADMIN_PERMISSIONS.CREATOR_EARNINGS_MANAGE,
+        ADMIN_PERMISSIONS.CREATOR_EARNINGS_REVERSE,
+        ADMIN_PERMISSIONS.CREATOR_EARNINGS_RELEASE,
+
+        ADMIN_PERMISSIONS.PAYOUT_METHODS_VIEW,
+        ADMIN_PERMISSIONS.PAYOUT_METHODS_MANAGE,
+    ],
+
+    MODERATOR: [
+        ADMIN_PERMISSIONS.LIVE_VIEW,
+        ADMIN_PERMISSIONS.STREAMS_VIEW,
+
+        ADMIN_PERMISSIONS.CHAT_VIEW,
+        ADMIN_PERMISSIONS.CHAT_DELETE,
+        ADMIN_PERMISSIONS.CHAT_BULK_DELETE,
+
+        ADMIN_PERMISSIONS.REPORTS_VIEW,
+        ADMIN_PERMISSIONS.REPORTS_ASSIGN,
+        ADMIN_PERMISSIONS.REPORTS_NOTE,
+        ADMIN_PERMISSIONS.REPORTS_RESOLVE,
+
+        ADMIN_PERMISSIONS.BAN_APPEALS_VIEW,
+        ADMIN_PERMISSIONS.BAN_APPEALS_REVIEW,
+
+        ADMIN_PERMISSIONS.AUTOMOD_VIEW,
+
+        ADMIN_PERMISSIONS.MOD_ACTIONS_VIEW,
+        ADMIN_PERMISSIONS.MOD_RESTRICTIONS_VIEW,
+
+        ADMIN_PERMISSIONS.USERS_VIEW,
+    ],
+
+    ANALYST: [
+        ADMIN_PERMISSIONS.LIVE_VIEW,
+        ADMIN_PERMISSIONS.STREAMS_VIEW,
+        ADMIN_PERMISSIONS.CHAT_VIEW,
+
+        ADMIN_PERMISSIONS.REPORTS_VIEW,
+        ADMIN_PERMISSIONS.BAN_APPEALS_VIEW,
+
+        ADMIN_PERMISSIONS.AUTOMOD_VIEW,
+
+        ADMIN_PERMISSIONS.MOD_ACTIONS_VIEW,
+        ADMIN_PERMISSIONS.MOD_RESTRICTIONS_VIEW,
+
+        ADMIN_PERMISSIONS.USERS_VIEW,
+
+        ADMIN_PERMISSIONS.SYSTEM_VIEW,
+
+        ADMIN_PERMISSIONS.AUDIT_LOGS_VIEW,
+
+        ADMIN_PERMISSIONS.EMAIL_SETTINGS_VIEW,
+        ADMIN_PERMISSIONS.EMAIL_TEMPLATES_VIEW,
+        ADMIN_PERMISSIONS.EMAIL_TEMPLATES_PREVIEW,
+        ADMIN_PERMISSIONS.EMAIL_LOGS_VIEW,
+
+        ADMIN_PERMISSIONS.ADMIN_STORE_VIEW,
+
+        ADMIN_PERMISSIONS.ADMIN_ADVERT_VIEW,
+        ADMIN_PERMISSIONS.IN_APP_ALERTS_VIEW,
+        ADMIN_PERMISSIONS.USER_BADGES_VIEW,
+
+        ADMIN_PERMISSIONS.PAYOUTS_VIEW,
+        ADMIN_PERMISSIONS.CREATOR_EARNINGS_VIEW,
+        ADMIN_PERMISSIONS.PAYOUT_METHODS_VIEW,
+    ],
+};
+
+export function getDefaultAdminPermissionsForRole(
+    role: AdminRole,
+): AdminPermission[] {
+    return DEFAULT_ROLE_PERMISSION_MAP[role] ?? [];
+}
+
+export function getAdminPermissionsForRole(role: AdminRole): AdminPermission[] {
+    return getDefaultAdminPermissionsForRole(role);
+}
+
+export function isAdminPermission(value: string): value is AdminPermission {
+    return ALL_ADMIN_PERMISSIONS.includes(value as AdminPermission);
+}
+
+export function hasAdminPermission(
+    permissions: string[] | undefined | null,
+    permission: AdminPermission,
+) {
+    return Array.isArray(permissions) && permissions.includes(permission);
+}

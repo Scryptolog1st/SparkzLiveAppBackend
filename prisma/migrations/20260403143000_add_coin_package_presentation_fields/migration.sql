@@ -1,0 +1,4 @@
+ALTER TABLE "coin_packages"
+ADD COLUMN IF NOT EXISTS "badge_text" TEXT,
+ADD COLUMN IF NOT EXISTS "color_preset" TEXT,
+ADD COLUMN IF NOT EXISTS "is_featured" BOOLEAN NOT NULL DEFAULT false;

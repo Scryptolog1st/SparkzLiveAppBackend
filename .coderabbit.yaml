@@ -1,0 +1,5 @@
+language: "en-US"
+reviews:
+  profile: "assertive"
+  path_filters:
+    - "!.env"  # Explicitly tells CodeRabbit to analyze your server-side environment paths

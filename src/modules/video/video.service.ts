@@ -1,0 +1,548 @@
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import type { Prisma, StreamRole } from "@prisma/client";
+
+import { SystemLogEventsService } from "../api-observability/system-log-events.service";
+import { PrismaService } from "../prisma/prisma.service";
+import { LiveKitAdapter } from "./providers/livekit.adapter";
+import type { VideoRole, VideoTokenResponse } from "./video.types";
+
+@Injectable()
+export class VideoService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+    private readonly systemLogEvents: SystemLogEventsService,
+  ) { }
+
+  private writeLiveKitLog(params: {
+    level: "INFO" | "WARN" | "ERROR";
+    category: string;
+    message: string;
+    streamId?: string | null;
+    roomName?: string | null;
+    userId?: string | null;
+    detailsJson?: Prisma.InputJsonValue;
+  }) {
+    void this.systemLogEvents.write({
+      source: "LIVEKIT",
+      level: params.level,
+      category: params.category,
+      message: params.message,
+      streamId: params.streamId ?? null,
+      roomName: params.roomName ?? null,
+      userId: params.userId ?? null,
+      ...(params.detailsJson !== undefined
+        ? { detailsJson: params.detailsJson }
+        : {}),
+    });
+  }
+
+  private getLiveKitAdapter(): LiveKitAdapter {
+    const url = (this.config.get<string>("LIVEKIT_PUBLIC_URL") || "").trim();
+    const key = (this.config.get<string>("LIVEKIT_API_KEY") || "").trim();
+    const secret = (this.config.get<string>("LIVEKIT_API_SECRET") || "").trim();
+
+    if (!url || !key || !secret) {
+      this.writeLiveKitLog({
+        level: "ERROR",
+        category: "CONFIG",
+        message:
+          "LiveKit is not configured. Set LIVEKIT_PUBLIC_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET.",
+        detailsJson: {
+          hasUrl: Boolean(url),
+          hasKey: Boolean(key),
+          hasSecret: Boolean(secret),
+        },
+      });
+
+      throw new ServiceUnavailableException(
+        "LiveKit is not configured. Set LIVEKIT_PUBLIC_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET.",
+      );
+    }
+
+    return new LiveKitAdapter(url, key, secret);
+  }
+
+  private roomName(streamId: string) {
+    return `stream-${streamId}`;
+  }
+
+  
+
+  private battleRoomName(battleSessionId: string) {
+    return `battle-${battleSessionId}`;
+  }
+private toVideoRole(role: StreamRole): VideoRole {
+    return role as unknown as VideoRole;
+  }
+
+  private buildStableVideoIdentity(userId: string): string {
+    return `user:${userId}`;
+  }
+
+  private buildAdminObserverIdentity(adminUserId: string, streamId: string): string {
+    return `admin-observer:${adminUserId}:${streamId}`;
+  }
+
+  private async assertNotPlatformBanned(userId: string) {
+    const user = (await this.prisma.user.findUnique({
+      where: { id: userId },
+    })) as any;
+
+    if (!user?.isPlatformBanned) return;
+
+    const expiresAt = user.platformBanExpiresAt instanceof Date ? user.platformBanExpiresAt : null;
+    if (expiresAt && expiresAt.getTime() <= Date.now()) {
+      return;
+    }
+
+    const reason =
+      typeof user.platformBanReason === "string" && user.platformBanReason.trim()
+        ? user.platformBanReason
+        : null;
+
+    throw new ForbiddenException({
+      message: reason ? `Account banned: ${reason}` : "Account banned.",
+      code: "ACCOUNT_BANNED",
+      ban: {
+        userId: user.id,
+        reason,
+        issuedAt:
+          user.platformBanIssuedAt instanceof Date
+            ? user.platformBanIssuedAt.toISOString()
+            : null,
+        expiresAt: expiresAt ? expiresAt.toISOString() : null,
+      },
+    });
+  }
+
+  private async isBlockedByHost(hostUserId: string, userId: string): Promise<boolean> {
+    if (!hostUserId || !userId || hostUserId === userId) return false;
+
+    const row = await this.prisma.userBlock.findUnique({
+      where: {
+        blockerId_blockedId: {
+          blockerId: hostUserId,
+          blockedId: userId,
+        },
+      },
+    });
+
+    return !!row;
+  }
+
+  private async isStreamBanned(streamId: string, userId: string): Promise<boolean> {
+    const now = new Date();
+
+    const row = await this.prisma.streamUserRestriction.findFirst({
+      where: {
+        streamId,
+        userId,
+        kind: "BAN",
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+      },
+      select: { id: true },
+    });
+
+    return !!row;
+  }
+
+  private async isKickedFromStream(streamId: string, userId: string): Promise<boolean> {
+    const row = await this.prisma.streamUserRestriction.findFirst({
+      where: {
+        streamId,
+        userId,
+        kind: "KICKED",
+      },
+      select: { id: true },
+    });
+
+    return !!row;
+  }
+
+  private async getAssignedRole(streamId: string, userId: string): Promise<StreamRole | null> {
+    const assigned = await this.prisma.streamUserRole.findUnique({
+      where: { streamId_userId: { streamId, userId } },
+      select: { role: true },
+    });
+
+    return assigned?.role ?? null;
+  }
+
+  private async ensureActiveParticipantForVideoToken(
+    streamId: string,
+    userId: string,
+    role: StreamRole,
+  ) {
+    const updated = await this.prisma.streamParticipant.updateMany({
+      where: {
+        streamId,
+        userId,
+        leftAt: null,
+      },
+      data: { role },
+    });
+
+    if (updated.count === 0) {
+      await this.prisma.streamParticipant.create({
+        data: {
+          streamId,
+          userId,
+          role,
+        },
+      });
+    }
+  }
+
+  async issueStreamToken(params: {
+    streamId: string;
+    userId: string;
+  }): Promise<VideoTokenResponse> {
+    const streamId = String(params.streamId || "").trim();
+    const userId = String(params.userId || "").trim();
+
+    if (!streamId) {
+      throw new NotFoundException("Stream not found");
+    }
+
+    if (!userId) {
+      throw new ForbiddenException("Invalid user identity");
+    }
+
+    await this.assertNotPlatformBanned(userId);
+
+    const stream = await this.prisma.stream.findUnique({
+      where: { id: streamId },
+      select: {
+        id: true,
+        status: true,
+        hostUserId: true,
+        videoRoomName: true,
+        videoProvider: true,
+      },
+    });
+
+    if (!stream) {
+      throw new NotFoundException("Stream not found");
+    }
+
+    if (stream.status !== "LIVE") {
+      throw new ForbiddenException("Stream is not live");
+    }
+
+    let role: StreamRole;
+
+    if (stream.hostUserId === userId) {
+      role = "HOST";
+    } else {
+      const [participant, assignedRole, blockedByHost, kickedFromStream, bannedFromStream] =
+        await Promise.all([
+          this.prisma.streamParticipant.findFirst({
+            where: { streamId, userId, leftAt: null },
+            select: { role: true },
+          }),
+          this.getAssignedRole(streamId, userId),
+          this.isBlockedByHost(stream.hostUserId, userId),
+          this.isKickedFromStream(streamId, userId),
+          this.isStreamBanned(streamId, userId),
+        ]);
+
+      if (blockedByHost) {
+        throw new ForbiddenException("Blocked by host");
+      }
+
+      if (kickedFromStream) {
+        throw new ForbiddenException("Kicked from stream");
+      }
+
+      if (bannedFromStream) {
+        throw new ForbiddenException("Banned");
+      }
+
+      role = participant?.role ?? assignedRole ?? "VIEWER";
+
+      if (!participant) {
+        await this.ensureActiveParticipantForVideoToken(streamId, userId, role);
+
+        this.writeLiveKitLog({
+          level: "INFO",
+          category: "AUTO_JOIN_FOR_TOKEN",
+          message: "Auto-created active stream participant before issuing video token.",
+          streamId,
+          roomName: stream.videoRoomName || this.roomName(streamId),
+          userId,
+          detailsJson: {
+            role,
+          },
+        });
+      }
+    }
+
+    const roomName = stream.videoRoomName || this.roomName(streamId);
+
+    if (!stream.videoRoomName || !stream.videoProvider) {
+      this.prisma.stream
+        .update({
+          where: { id: streamId },
+          data: {
+            videoProvider: "LIVEKIT",
+            videoRoomName: roomName,
+          },
+        })
+        .catch((err) => console.error("Non-critical stream update failed:", err));
+    }
+
+    const adapter = this.getLiveKitAdapter();
+    const identity = this.buildStableVideoIdentity(userId);
+
+    try {
+      return await adapter.getToken({
+        streamId,
+        userId,
+        identity,
+        role: this.toVideoRole(role),
+        roomName,
+      });
+    } catch (error) {
+      this.writeLiveKitLog({
+        level: "ERROR",
+        category: "TOKEN_ISSUE",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Failed to issue LiveKit stream token.",
+        streamId,
+        roomName,
+        userId,
+        detailsJson: {
+          identity,
+          role,
+        },
+      });
+
+      throw error;
+    }
+  }
+
+  async issueBattleSessionToken(params: {
+    battleSessionId: string;
+    userId: string;
+  }): Promise<VideoTokenResponse> {
+    const battleSessionId = String(params.battleSessionId || "").trim();
+    const userId = String(params.userId || "").trim();
+
+    if (!battleSessionId) {
+      throw new NotFoundException("Battle session not found");
+    }
+
+    if (!userId) {
+      throw new ForbiddenException("Missing user");
+    }
+
+    await this.assertNotPlatformBanned(userId);
+
+    const battle = await (this.prisma as any).battleSession.findUnique({
+      where: { id: battleSessionId },
+      include: {
+        sides: {
+          include: {
+            participants: true,
+            stream: {
+              select: {
+                id: true,
+                status: true,
+                hostUserId: true,
+                endedAt: true,
+              },
+            },
+          },
+        },
+        participants: true,
+      },
+    });
+
+    if (!battle) {
+      throw new NotFoundException("Battle session not found");
+    }
+
+    const status = String(battle.status || "").toUpperCase();
+    const mediaStatuses = new Set(["ACTIVE", "SUDDEN_DEATH", "REMATCH_ACTIVE", "COOLDOWN"]);
+
+    if (!mediaStatuses.has(status)) {
+      throw new ForbiddenException("Battle is not active");
+    }
+
+    const sides = Array.isArray(battle.sides) ? battle.sides : [];
+    const participants = Array.isArray(battle.participants) ? battle.participants : [];
+
+    const sideStreamIds: string[] = Array.from(
+      new Set<string>(
+        sides
+          .map((side: any) => String(side?.streamId || "").trim())
+          .filter((streamId: string): streamId is string => !!streamId),
+      ),
+    );
+
+    const primaryStreamId = sideStreamIds[0] || battleSessionId;
+
+    const isSideHost = sides.some((side: any) => String(side?.hostUserId || "") === userId);
+    const isBattleParticipant =
+      participants.some((participant: any) => {
+        return (
+          String(participant?.userId || "") === userId &&
+          String(participant?.status || "").toUpperCase() === "ACCEPTED" &&
+          !participant?.leftAt
+        );
+      }) ||
+      sides.some((side: any) => {
+        return (side?.participants || []).some((participant: any) => {
+          return (
+            String(participant?.userId || "") === userId &&
+            String(participant?.status || "").toUpperCase() === "ACCEPTED" &&
+            !participant?.leftAt
+          );
+        });
+      });
+
+    let isViewerOfBattleStream = false;
+
+    if (!isSideHost && !isBattleParticipant && sideStreamIds.length > 0) {
+      const streamParticipant = await (this.prisma as any).streamParticipant.findFirst({
+        where: {
+          streamId: { in: sideStreamIds },
+          userId,
+          leftAt: null,
+        },
+        select: { id: true },
+      });
+
+      isViewerOfBattleStream = !!streamParticipant;
+    }
+
+    if (!isSideHost && !isBattleParticipant && !isViewerOfBattleStream) {
+      throw new ForbiddenException("Join one of the battle streams first");
+    }
+
+    const canPublish = (isSideHost || isBattleParticipant) && status !== "COOLDOWN";
+    const roomName = this.battleRoomName(battleSessionId);
+    const adapter = this.getLiveKitAdapter();
+    const identity = this.buildStableVideoIdentity(userId);
+    const role = (canPublish ? "HOST" : "VIEWER") as VideoRole;
+
+    try {
+      return await adapter.getToken({
+        streamId: primaryStreamId,
+        userId,
+        identity,
+        role,
+        roomName,
+      });
+    } catch (error) {
+      this.writeLiveKitLog({
+        level: "ERROR",
+        category: "BATTLE_TOKEN_ISSUE",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Failed to issue LiveKit battle token.",
+        streamId: primaryStreamId || null,
+        roomName,
+        userId,
+        detailsJson: {
+          battleSessionId,
+          role,
+          canPublish,
+          sideStreamIds,
+        },
+      });
+
+      throw error;
+    }
+  }
+
+  async issueAdminObserverToken(params: {
+    streamId: string;
+    adminUserId: string;
+  }): Promise<VideoTokenResponse> {
+    const streamId = String(params.streamId || "").trim();
+    const adminUserId = String(params.adminUserId || "").trim();
+
+    if (!streamId) {
+      throw new NotFoundException("Stream not found");
+    }
+
+    if (!adminUserId) {
+      throw new ForbiddenException("Invalid admin identity");
+    }
+
+    const stream = await this.prisma.stream.findUnique({
+      where: { id: streamId },
+      select: {
+        id: true,
+        status: true,
+        videoRoomName: true,
+        videoProvider: true,
+      },
+    });
+
+    if (!stream) {
+      throw new NotFoundException("Stream not found");
+    }
+
+    if (stream.status !== "LIVE") {
+      throw new ForbiddenException("Stream is not live");
+    }
+
+    const roomName = stream.videoRoomName || this.roomName(streamId);
+
+    if (!stream.videoRoomName || !stream.videoProvider) {
+      this.prisma.stream
+        .update({
+          where: { id: streamId },
+          data: {
+            videoProvider: "LIVEKIT",
+            videoRoomName: roomName,
+          },
+        })
+        .catch((err) => console.error("Non-critical stream update failed:", err));
+    }
+
+    const adapter = this.getLiveKitAdapter();
+    const identity = this.buildAdminObserverIdentity(adminUserId, streamId);
+    const role = "VIEWER" as VideoRole;
+
+    try {
+      return await adapter.getToken({
+        streamId,
+        userId: adminUserId,
+        identity,
+        role,
+        roomName,
+      });
+    } catch (error) {
+      this.writeLiveKitLog({
+        level: "ERROR",
+        category: "ADMIN_OBSERVER_TOKEN_ISSUE",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Failed to issue LiveKit admin observer token.",
+        streamId,
+        roomName,
+        userId: adminUserId,
+        detailsJson: {
+          identity,
+          role,
+        },
+      });
+
+      throw error;
+    }
+  }
+}

@@ -1,0 +1,4 @@
+ALTER TABLE "profiles"
+ADD COLUMN IF NOT EXISTS "badge_label" VARCHAR(80),
+ADD COLUMN IF NOT EXISTS "badge_tone" VARCHAR(32),
+ADD COLUMN IF NOT EXISTS "show_badge_on_profile" BOOLEAN NOT NULL DEFAULT true;

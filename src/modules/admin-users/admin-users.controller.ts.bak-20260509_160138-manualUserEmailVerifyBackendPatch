@@ -1,0 +1,105 @@
+import {
+    Body,
+    Controller,
+    Delete,
+    Get,
+    Param,
+    Post,
+    Query,
+    Req,
+    UseGuards,
+} from "@nestjs/common";
+
+import { AppConfigService } from "../app-config/app-config.service";
+import { ModerationService } from "../moderation/moderation.service";
+import { AdminProxyGuard } from "./admin-proxy.guard";
+import {
+    AdminUserDiscoveryBoostDto,
+    AdminUserDiscoveryHideDto,
+    AdminUserModerationHistoryQueryDto,
+    AdminUserReportsQueryDto,
+    AdminUsersListQueryDto,
+} from "./dto/admin-users.dto";
+import { AdminUsersService } from "./admin-users.service";
+
+@Controller("admin/users")
+@UseGuards(AdminProxyGuard)
+export class AdminUsersController {
+    constructor(
+        private readonly adminUsers: AdminUsersService,
+        private readonly appConfig: AppConfigService,
+        private readonly moderation: ModerationService,
+    ) { }
+
+    @Get("summary")
+    async summary(@Req() req: any) {
+        return this.adminUsers.getSummary(req.adminUser.id);
+    }
+
+    @Get()
+    async list(@Req() req: any, @Query() query: AdminUsersListQueryDto) {
+        return this.adminUsers.list(req.adminUser.id, query);
+    }
+
+    @Get(":id")
+    async byId(@Req() req: any, @Param("id") id: string) {
+        return this.adminUsers.getById(req.adminUser.id, id);
+    }
+
+    @Get(":id/moderation-history")
+    async moderationHistory(
+        @Req() req: any,
+        @Param("id") id: string,
+        @Query() query: AdminUserModerationHistoryQueryDto,
+    ) {
+        return this.moderation.getAdminUserHistory(req.adminUser.id, id, query);
+    }
+
+    @Get(":id/reports")
+    async reports(
+        @Req() req: any,
+        @Param("id") id: string,
+        @Query() query: AdminUserReportsQueryDto,
+    ) {
+        return this.adminUsers.getReports(req.adminUser.id, id, query);
+    }
+
+    @Post(":id/discovery/hide")
+    async hideUser(
+        @Req() req: any,
+        @Param("id") id: string,
+        @Body() body: AdminUserDiscoveryHideDto,
+    ) {
+        return this.appConfig.hideUser(req.adminUser.id, {
+            userId: id,
+            reason: body.reason,
+        });
+    }
+
+    @Delete(":id/discovery/hide")
+    async unhideUser(@Req() req: any, @Param("id") id: string) {
+        return this.appConfig.unhideUser(req.adminUser.id, id);
+    }
+
+    @Post(":id/discovery/boost")
+    async boostUser(
+        @Req() req: any,
+        @Param("id") id: string,
+        @Body() body: AdminUserDiscoveryBoostDto,
+    ) {
+        return this.appConfig.boostUser(req.adminUser.id, {
+            userId: id,
+            durationMinutes: body.durationMinutes,
+        });
+    }
+
+    @Delete(":id/discovery/boost")
+    async clearBoost(@Req() req: any, @Param("id") id: string) {
+        return this.appConfig.clearBoost(req.adminUser.id, id);
+    }
+
+    @Delete(":id/account")
+    async deleteUserAccount(@Req() req: any, @Param("id") id: string) {
+        return this.adminUsers.deleteUserAccount(req.adminUser.id, id);
+    }
+}

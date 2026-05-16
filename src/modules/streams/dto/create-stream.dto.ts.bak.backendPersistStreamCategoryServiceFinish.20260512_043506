@@ -1,0 +1,52 @@
+import {
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from "class-validator";
+
+export class CreateStreamDto {
+  @IsString()
+  @MaxLength(120)
+  title!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  color?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isAudioOnly?: boolean;
+
+  @IsString()
+  @IsIn(["PUBLIC", "FOLLOWERS", "PRIVATE"])
+  visibility!: "PUBLIC" | "FOLLOWERS" | "PRIVATE";
+
+  @IsOptional()
+  @IsArray()
+  tags?: string[];
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  layoutGridSize?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  gridSize?: number;
+
+  streamCategoryId?: string;
+  categorySlug?: string;
+  categoryName?: string;
+  streamCategorySlug?: string;
+  streamCategoryName?: string;
+}

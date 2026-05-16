@@ -1,0 +1,35 @@
+import { Controller, Param, Post, Req, UseGuards } from "@nestjs/common";
+import type { Request } from "express";
+import { JwtAuthGuard } from "../auth/jwt/jwt-auth.guard";
+import { VideoService } from "./video.service";
+
+type JwtReq = Request & {
+  user?: {
+    userId: string;
+    username?: string;
+  };
+};
+
+@Controller()
+export class VideoController {
+  constructor(private readonly video: VideoService) { }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("/streams/:id/videoToken")
+  async videoToken(@Req() req: JwtReq, @Param("id") id: string) {
+    return this.video.issueStreamToken({
+      streamId: id,
+      userId: req.user!.userId,
+    });
+  }
+  @UseGuards(JwtAuthGuard)
+  @Post("/battle-sessions/:id/videoToken")
+  async battleSessionVideoToken(@Req() req: JwtReq, @Param("id") id: string) {
+    return this.video.issueBattleSessionToken({
+      battleSessionId: id,
+      userId: req.user!.userId,
+    });
+  }
+
+
+}

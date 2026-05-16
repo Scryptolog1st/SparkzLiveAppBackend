@@ -1,0 +1,73 @@
+// ================================
+// Phase 13 — Payments (SNIPPET)
+// Paste into prisma/schema.prisma
+// ================================
+
+// 1) Add a dedicated ledger entry type for coin purchases.
+//    If your enum already exists, ensure this value is present inside it:
+//
+// enum LedgerEntryType {
+//   GIFT_SEND
+//   GIFT_RECEIVE
+//   ADMIN_ADJUST
+//   PURCHASE_CREDIT   // <--- add this
+// }
+
+enum PurchaseProvider {
+  DEV
+  STRIPE
+  REVENUECAT
+}
+
+enum PurchaseStatus {
+  PENDING
+  PAID
+  FULFILLED
+  FAILED
+  CANCELED
+}
+
+model CoinPackage {
+  id          String   @id
+  coins       Int
+  priceCents  Int      @map("price_cents")
+  currency    String   @default("USD")
+  isActive    Boolean  @default(true) @map("is_active")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  orders      PurchaseOrder[]
+
+  @@index([isActive, sortOrder])
+  @@map("coin_packages")
+}
+
+model PurchaseOrder {
+  id             String          @id @default(uuid()) @db.Uuid
+  userId         String          @db.Uuid @map("user_id")
+  packageId      String          @map("package_id")
+
+  provider       PurchaseProvider
+  status         PurchaseStatus
+
+  idempotencyKey String?         @map("idempotency_key")
+  providerRef    String?         @map("provider_ref")
+
+  coins          Int
+  priceCents     Int             @map("price_cents")
+  currency       String          @default("USD")
+
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+  paidAt         DateTime?       @map("paid_at")
+  fulfilledAt    DateTime?       @map("fulfilled_at")
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pkg            CoinPackage     @relation(fields: [packageId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([provider, providerRef])
+  @@map("purchase_orders")
+}

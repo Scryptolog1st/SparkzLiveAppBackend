@@ -1,0 +1,143 @@
+import {
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+} from "class-validator";
+
+export const ADMIN_GIFT_MEDIA_TYPES = ["IMAGE", "GIF", "VIDEO", "LOTTIE"] as const;
+
+export type AdminGiftMediaTypeInput = (typeof ADMIN_GIFT_MEDIA_TYPES)[number];
+
+export const ADMIN_GIFT_EFFECT_SIZES = [
+  "SMALL",
+  "MEDIUM",
+  "LARGE",
+  "EXTRA_LARGE",
+] as const;
+
+export type AdminGiftEffectSizeInput = (typeof ADMIN_GIFT_EFFECT_SIZES)[number];
+
+export class CreateAdminGiftDto {
+  @IsString()
+  @MaxLength(80)
+  @Matches(/^[a-z0-9][a-z0-9_-]{1,79}$/, {
+    message:
+      "id must be 2-80 chars and use lowercase letters, numbers, underscores, or hyphens.",
+  })
+  id!: string;
+
+  @IsString()
+  @MaxLength(80)
+  name!: string;
+
+  @IsInt()
+  @Min(0)
+  @Max(1000000000)
+  diamondValue!: number;
+
+  @IsInt()
+  @Min(0)
+  @Max(1000000000)
+  coinCost!: number;
+
+  @IsString()
+  @MaxLength(1000)
+  @Matches(/^(https?:\/\/|\/)[^\s]+$/, {
+    message: "mediaUrl must be an absolute http(s) URL or an app-relative / path.",
+  })
+  mediaUrl!: string;
+
+  @IsIn(ADMIN_GIFT_MEDIA_TYPES)
+  mediaType!: AdminGiftMediaTypeInput;
+
+  @IsOptional()
+  @IsIn(ADMIN_GIFT_EFFECT_SIZES)
+  effectSize?: AdminGiftEffectSizeInput;
+
+  @IsOptional()
+  @IsBoolean()
+  isBigGift?: boolean;
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  giftCategoryId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  categorySlug?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  categoryName?: string;
+
+
+  @IsOptional()
+  @IsBoolean()
+  isEnabled?: boolean;
+}
+
+export class UpdateAdminGiftDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  name?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1000000000)
+  diamondValue?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1000000000)
+  coinCost?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  @Matches(/^(https?:\/\/|\/)[^\s]+$/, {
+    message: "mediaUrl must be an absolute http(s) URL or an app-relative / path.",
+  })
+  mediaUrl?: string;
+
+  @IsOptional()
+  @IsIn(ADMIN_GIFT_MEDIA_TYPES)
+  mediaType?: AdminGiftMediaTypeInput;
+
+  @IsOptional()
+  @IsIn(ADMIN_GIFT_EFFECT_SIZES)
+  effectSize?: AdminGiftEffectSizeInput;
+
+  @IsOptional()
+  @IsBoolean()
+  isBigGift?: boolean;
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  giftCategoryId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  categorySlug?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  categoryName?: string | null;
+
+
+  @IsOptional()
+  @IsBoolean()
+  isEnabled?: boolean;
+}

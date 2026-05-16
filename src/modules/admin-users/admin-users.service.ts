@@ -1,0 +1,1207 @@
+import {
+    ForbiddenException,
+    Injectable,
+    NotFoundException,
+    UnauthorizedException,
+} from "@nestjs/common";
+import {
+    PayoutStatus,
+    Prisma,
+    PurchaseStatus,
+    ReportStatus,
+    StreamStatus,
+} from "@prisma/client";
+
+import { PrismaService } from "../prisma/prisma.service";
+import {
+    AdminUserReportsQueryDto,
+    AdminUsersListQueryDto,
+} from "./dto/admin-users.dto";
+
+type DiscoveryHiddenRow = {
+    userId: string;
+    username?: string;
+    reason?: string | null;
+    hiddenAt?: string;
+};
+
+type DiscoveryBoostRow = {
+    userId: string;
+    username?: string;
+    expiresAt?: string;
+};
+
+@Injectable()
+export class AdminUsersService {
+    constructor(private readonly prisma: PrismaService) { }
+
+    private normalizePage(value: string | number | undefined, fallback: number) {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+        return Math.floor(parsed);
+    }
+
+    private normalizePageSize(
+        value: string | number | undefined,
+        fallback: number,
+    ) {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+        return Math.min(100, Math.floor(parsed));
+    }
+
+    private isUuid(value: string) {
+        return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+            value,
+        );
+    }
+
+    private async requireAdmin(adminUserId: string) {
+        const adminUser = await this.prisma.adminUser.findUnique({
+            where: { id: adminUserId },
+            select: {
+                id: true,
+                email: true,
+                name: true,
+                role: true,
+                isActive: true,
+            },
+        });
+
+        if (!adminUser) {
+            throw new UnauthorizedException("Admin account not found.");
+        }
+
+        if (!adminUser.isActive) {
+            throw new ForbiddenException("Admin account is inactive.");
+        }
+
+        return adminUser;
+    }
+
+    async verifyUserEmail(adminUserId: string, userId: string) {
+        const adminUser = await this.requireAdmin(adminUserId);
+
+        if (adminUser.role !== "SUPER_ADMIN") {
+            throw new ForbiddenException("Only Super Admins can manually verify user emails.");
+        }
+
+        if (!this.isUuid(userId)) {
+            throw new ForbiddenException("Invalid user id.");
+        }
+
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            include: {
+                profile: true,
+            },
+        });
+
+        if (!user) {
+            throw new NotFoundException("User account not found.");
+        }
+
+        if (user.emailVerifiedAt) {
+            return {
+                success: true,
+                alreadyVerified: true,
+                userId: user.id,
+                username: user.username,
+                email: user.email,
+                emailVerifiedAt: user.emailVerifiedAt.toISOString(),
+            };
+        }
+
+        const verifiedAt = new Date();
+        const targetSummary = {
+            id: user.id,
+            publicId: user.publicId,
+            email: user.email,
+            username: user.username,
+            displayName: user.profile?.displayName ?? null,
+        };
+
+        await this.prisma.$transaction(async (tx) => {
+            await tx.user.update({
+                where: { id: user.id },
+                data: {
+                    emailVerifiedAt: verifiedAt,
+                },
+            });
+
+            await tx.emailVerificationToken.updateMany({
+                where: {
+                    userId: user.id,
+                    consumedAt: null,
+                },
+                data: {
+                    consumedAt: verifiedAt,
+                },
+            });
+
+            await tx.adminAuditLog.create({
+                data: {
+                    actorAdminUserId: adminUser.id,
+                    actorEmail: adminUser.email,
+                    actorName: adminUser.name,
+                    actorRole: adminUser.role,
+                    actionType: "UPDATE",
+                    actionCode: "admin.user.verify_email",
+                    actionLabel: "Manually verified user email",
+                    resourceType: "USER",
+                    resourceId: user.id,
+                    status: "SUCCESS",
+                    severity: "WARNING",
+                    targetUserId: user.id,
+                    targetSummaryJson: targetSummary as any,
+                    beforeStateJson: {
+                        emailVerifiedAt: null,
+                    } as any,
+                    afterStateJson: {
+                        emailVerifiedAt: verifiedAt.toISOString(),
+                    } as any,
+                    metadataJson: {
+                        source: "admin_user_directory",
+                        verifiedBy: "SUPER_ADMIN",
+                        verifiedAt: verifiedAt.toISOString(),
+                        consumedOutstandingEmailVerificationTokens: true,
+                    } as any,
+                },
+            });
+        });
+
+        return {
+            success: true,
+            alreadyVerified: false,
+            userId: user.id,
+            username: user.username,
+            email: user.email,
+            emailVerifiedAt: verifiedAt.toISOString(),
+        };
+    }
+
+    async deleteUserAccount(adminUserId: string, userId: string) {
+        const adminUser = await this.requireAdmin(adminUserId);
+
+        if (adminUser.role !== "SUPER_ADMIN") {
+            throw new ForbiddenException("Only Super Admins can delete user accounts.");
+        }
+
+        if (!this.isUuid(userId)) {
+            throw new ForbiddenException("Invalid user id.");
+        }
+
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            include: {
+                profile: true,
+                wallet: true,
+                hostedStreams: {
+                    where: { status: StreamStatus.LIVE },
+                    select: {
+                        id: true,
+                        title: true,
+                        status: true,
+                        startedAt: true,
+                    },
+                },
+                _count: {
+                    select: {
+                        hostedStreams: true,
+                        streamParticipants: true,
+                        chatMessages: true,
+                        purchaseOrders: true,
+                        payoutRequests: true,
+                        submittedReports: true,
+                        reportsAsTarget: true,
+                        feedPosts: true,
+                        storyPosts: true,
+                        directMessages: true,
+                    },
+                },
+            },
+        });
+
+        if (!user) {
+            throw new NotFoundException("User account not found.");
+        }
+
+        const deletedAt = new Date();
+        const summary = {
+            id: user.id,
+            publicId: user.publicId,
+            email: user.email,
+            username: user.username,
+            displayName: user.profile?.displayName ?? null,
+            isPlatformBanned: user.isPlatformBanned,
+            liveStreams: user.hostedStreams.map((stream) => ({
+                id: stream.id,
+                title: stream.title,
+                status: stream.status,
+                startedAt: stream.startedAt.toISOString(),
+            })),
+            wallet: user.wallet
+                ? {
+                    coins: user.wallet.coins,
+                    diamondsEarned: user.wallet.diamondsEarned,
+                }
+                : null,
+            counts: user._count,
+        };
+
+        await this.prisma.$transaction(async (tx) => {
+            await tx.stream.updateMany({
+                where: {
+                    hostUserId: user.id,
+                    status: StreamStatus.LIVE,
+                },
+                data: {
+                    status: StreamStatus.ENDED,
+                    endedAt: deletedAt,
+                    endedByAdminUserId: adminUser.id,
+                    endReason: "User account deleted by Super Admin.",
+                },
+            });
+
+            const hiddenConfig = await tx.appConfig.findUnique({
+                where: { key: "discovery_hidden" },
+            });
+
+            if (Array.isArray(hiddenConfig?.valueJson)) {
+                await tx.appConfig.update({
+                    where: { key: "discovery_hidden" },
+                    data: {
+                        valueJson: hiddenConfig.valueJson.filter(
+                            (row: any) => String(row?.userId || "") !== user.id,
+                        ) as any,
+                    },
+                });
+            }
+
+            const boostsConfig = await tx.appConfig.findUnique({
+                where: { key: "discovery_boosts" },
+            });
+
+            if (Array.isArray(boostsConfig?.valueJson)) {
+                await tx.appConfig.update({
+                    where: { key: "discovery_boosts" },
+                    data: {
+                        valueJson: boostsConfig.valueJson.filter(
+                            (row: any) => String(row?.userId || "") !== user.id,
+                        ) as any,
+                    },
+                });
+            }
+
+            await tx.emailVerificationToken.deleteMany({
+                where: { userId: user.id },
+            });
+
+            await tx.passwordResetToken.deleteMany({
+                where: { userId: user.id },
+            });
+
+            await tx.adminAuditLog.create({
+                data: {
+                    actorAdminUserId: adminUser.id,
+                    actorEmail: adminUser.email,
+                    actorName: adminUser.name,
+                    actorRole: adminUser.role,
+                    actionType: "DELETE",
+                    actionCode: "admin.user.delete_account",
+                    actionLabel: "Deleted user account",
+                    resourceType: "USER",
+                    resourceId: user.id,
+                    status: "SUCCESS",
+                    severity: "CRITICAL",
+                    targetUserId: user.id,
+                    targetSummaryJson: summary as any,
+                    beforeStateJson: summary as any,
+                    metadataJson: {
+                        deletedBy: "SUPER_ADMIN",
+                        source: "admin_user_directory",
+                        deletedAt: deletedAt.toISOString(),
+                    } as any,
+                },
+            });
+
+            await tx.user.delete({
+                where: { id: user.id },
+            });
+        });
+
+        return {
+            success: true,
+            deletedUserId: user.id,
+            deletedUsername: user.username,
+            deletedEmail: user.email,
+        };
+    }
+
+    private mapAdminActor(adminUser: any) {
+        if (!adminUser) return null;
+        return {
+            id: adminUser.id,
+            email: adminUser.email,
+            name: adminUser.name,
+            role: adminUser.role,
+            isActive: adminUser.isActive,
+        };
+    }
+
+    private mapUserSummary(user: any) {
+        if (!user) return null;
+
+        return {
+            id: user.id,
+            publicId: user.publicId ?? null,
+            email: user.email ?? null,
+            username: user.username,
+            displayName: user.profile?.displayName?.trim() || user.username,
+            avatarUrl: user.profile?.avatarUrl ?? null,
+            bannerUrl: user.profile?.bannerUrl ?? null,
+            isPlatformBanned: Boolean(user.isPlatformBanned),
+            platformBanIssuedAt: user.platformBanIssuedAt
+                ? user.platformBanIssuedAt.toISOString()
+                : null,
+            platformBanExpiresAt: user.platformBanExpiresAt
+                ? user.platformBanExpiresAt.toISOString()
+                : null,
+            platformBanReason: user.platformBanReason ?? null,
+        };
+    }
+
+    private mapUser(user: any) {
+        return {
+            id: user.id,
+            publicId: user.publicId ?? null,
+            email: user.email,
+            username: user.username,
+            emailVerifiedAt: user.emailVerifiedAt ? user.emailVerifiedAt.toISOString() : null,
+            displayName: user.profile?.displayName?.trim() || user.username,
+            avatarUrl: user.profile?.avatarUrl ?? null,
+            bannerUrl: user.profile?.bannerUrl ?? null,
+            createdAt: user.createdAt.toISOString(),
+            updatedAt: user.updatedAt.toISOString(),
+            lastLoginAt: user.lastLoginAt ? user.lastLoginAt.toISOString() : null,
+            isPlatformBanned: Boolean(user.isPlatformBanned),
+            platformBanIssuedAt: user.platformBanIssuedAt
+                ? user.platformBanIssuedAt.toISOString()
+                : null,
+            platformBanExpiresAt: user.platformBanExpiresAt
+                ? user.platformBanExpiresAt.toISOString()
+                : null,
+            platformBanReason: user.platformBanReason ?? null,
+        };
+    }
+
+    private mapReportSummary(report: any) {
+        return {
+            id: report.id,
+            targetType: report.targetType,
+            reasonCode: report.reasonCode,
+            description: report.description ?? null,
+            status: report.status,
+            createdAt: report.createdAt.toISOString(),
+            updatedAt: report.updatedAt.toISOString(),
+            resolvedAt: report.resolvedAt ? report.resolvedAt.toISOString() : null,
+            reporter: this.mapUserSummary(report.reporter),
+            assignedAdminUser: this.mapAdminActor(report.assignedAdminUser),
+            targetUser: this.mapUserSummary(report.targetUser),
+            targetStream: report.targetStream
+                ? {
+                    id: report.targetStream.id,
+                    title: report.targetStream.title,
+                    status: report.targetStream.status,
+                    hostUserId: report.targetStream.hostUserId,
+                    host: this.mapUserSummary(report.targetStream.host),
+                }
+                : null,
+            targetChatMessage: report.targetChatMessage
+                ? {
+                    id: report.targetChatMessage.id,
+                    text: report.targetChatMessage.text,
+                    createdAt: report.targetChatMessage.createdAt.toISOString(),
+                    user: this.mapUserSummary(report.targetChatMessage.user),
+                    stream: report.targetChatMessage.stream
+                        ? {
+                            id: report.targetChatMessage.stream.id,
+                            title: report.targetChatMessage.stream.title,
+                            status: report.targetChatMessage.stream.status,
+                            hostUserId: report.targetChatMessage.stream.hostUserId,
+                            host: this.mapUserSummary(report.targetChatMessage.stream.host),
+                        }
+                        : null,
+                }
+                : null,
+            targetDmMessage: report.targetDmMessage
+                ? {
+                    id: report.targetDmMessage.id,
+                    text: report.targetDmMessage.text ?? null,
+                    createdAt: report.targetDmMessage.createdAt.toISOString(),
+                    sender: this.mapUserSummary(report.targetDmMessage.sender),
+                }
+                : null,
+        };
+    }
+
+    private normalizeDiscoveryRows(value: unknown) {
+        return Array.isArray(value) ? value : [];
+    }
+
+    private parseReportStatus(raw?: string) {
+        const value = String(raw || "any").trim().toUpperCase();
+        if (
+            value !== "ANY" &&
+            value !== ReportStatus.OPEN &&
+            value !== ReportStatus.IN_REVIEW &&
+            value !== ReportStatus.RESOLVED &&
+            value !== ReportStatus.DISMISSED &&
+            value !== ReportStatus.ESCALATED
+        ) {
+            throw new ForbiddenException("Invalid report status filter.");
+        }
+
+        return value === "ANY" ? "any" : (value as ReportStatus);
+    }
+
+    async getSummary(adminUserId: string) {
+        await this.requireAdmin(adminUserId);
+
+        const [discoveryHiddenConfig, discoveryBoostsConfig] = await Promise.all([
+            this.prisma.appConfig.findUnique({
+                where: { key: "discovery_hidden" },
+            }),
+            this.prisma.appConfig.findUnique({
+                where: { key: "discovery_boosts" },
+            }),
+        ]);
+
+        const hiddenRows = this.normalizeDiscoveryRows(
+            discoveryHiddenConfig?.valueJson,
+        ) as DiscoveryHiddenRow[];
+
+        const boostRows = this.normalizeDiscoveryRows(
+            discoveryBoostsConfig?.valueJson,
+        ) as DiscoveryBoostRow[];
+
+        const now = Date.now();
+
+        const activeBoostRows = boostRows.filter((row) => {
+            const expiresAt = new Date(String(row?.expiresAt || "")).getTime();
+            return Number.isFinite(expiresAt) && expiresAt > now;
+        });
+
+        const [
+            totalUsers,
+            liveUsers,
+            restrictedUsers,
+            recentAssetUsers,
+            pendingPayoutUsers,
+        ] = await Promise.all([
+            this.prisma.user.count(),
+            this.prisma.user.count({
+                where: {
+                    hostedStreams: {
+                        some: {
+                            status: StreamStatus.LIVE,
+                        },
+                    },
+                },
+            }),
+            this.prisma.user.count({
+                where: {
+                    streamRestrictions: {
+                        some: {
+                            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+                        },
+                    },
+                },
+            }),
+            this.prisma.user.count({
+                where: {
+                    assetSubmissions: {
+                        some: {
+                            createdAt: {
+                                gte: new Date(Date.now() - 7 * 24 * 60 * 60_000),
+                            },
+                        },
+                    },
+                },
+            }),
+            this.prisma.user.count({
+                where: {
+                    payoutRequests: {
+                        some: {
+                            status: {
+                                in: [PayoutStatus.PENDING, PayoutStatus.PROCESSING],
+                            },
+                        },
+                    },
+                },
+            }),
+        ]);
+
+        return {
+            totals: {
+                users: totalUsers,
+                liveUsers,
+                hiddenUsers: hiddenRows.length,
+                boostedUsers: activeBoostRows.length,
+                restrictedUsers,
+                recentAssetUsers,
+                pendingPayoutUsers,
+            },
+            generatedAt: new Date().toISOString(),
+        };
+    }
+
+    async list(adminUserId: string, options: AdminUsersListQueryDto = {}) {
+        await this.requireAdmin(adminUserId);
+
+        const page = this.normalizePage(options.page, 1);
+        const pageSize = this.normalizePageSize(options.pageSize, 20);
+        const search = String(options.search || "").trim();
+        const sort = String(options.sort || "recent").trim().toLowerCase();
+        const discoveryState = String(
+            (options as any).discoveryState || "any",
+        )
+            .trim()
+            .toLowerCase();
+        const restrictionState = String(
+            (options as any).restrictionState || "any",
+        )
+            .trim()
+            .toLowerCase();
+        const liveState = String((options as any).liveState || "any")
+            .trim()
+            .toLowerCase();
+
+        const [discoveryHiddenConfig, discoveryBoostsConfig] = await Promise.all([
+            this.prisma.appConfig.findUnique({
+                where: { key: "discovery_hidden" },
+            }),
+            this.prisma.appConfig.findUnique({
+                where: { key: "discovery_boosts" },
+            }),
+        ]);
+
+        const hiddenRows = this.normalizeDiscoveryRows(
+            discoveryHiddenConfig?.valueJson,
+        ) as DiscoveryHiddenRow[];
+
+        const boostRows = this.normalizeDiscoveryRows(
+            discoveryBoostsConfig?.valueJson,
+        ) as DiscoveryBoostRow[];
+
+        const now = Date.now();
+
+        const hiddenUserIds = new Set(
+            hiddenRows
+                .map((row) => String(row?.userId || "").trim())
+                .filter(Boolean),
+        );
+
+        const boostedUserIds = new Set(
+            boostRows
+                .filter((row) => {
+                    const expiresAt = new Date(String(row?.expiresAt || "")).getTime();
+                    return Number.isFinite(expiresAt) && expiresAt > now;
+                })
+                .map((row) => String(row?.userId || "").trim())
+                .filter(Boolean),
+        );
+
+        const where: Prisma.UserWhereInput = {};
+
+        if (search) {
+            const orFilters: Prisma.UserWhereInput[] = [
+                { publicId: { contains: search, mode: "insensitive" } },
+                { email: { contains: search, mode: "insensitive" } },
+                { username: { contains: search, mode: "insensitive" } },
+                {
+                    profile: {
+                        is: {
+                            displayName: { contains: search, mode: "insensitive" },
+                        },
+                    },
+                },
+            ];
+
+            if (this.isUuid(search)) {
+                orFilters.unshift({ id: { equals: search } });
+            }
+
+            where.OR = orFilters;
+        }
+
+        if (discoveryState === "hidden") {
+            where.id = { in: Array.from(hiddenUserIds) };
+        } else if (discoveryState === "boosted") {
+            where.id = { in: Array.from(boostedUserIds) };
+        } else if (discoveryState === "visible") {
+            where.id = {
+                notIn: Array.from(new Set([...hiddenUserIds, ...boostedUserIds])),
+            };
+        }
+
+        if (restrictionState === "restricted") {
+            where.streamRestrictions = {
+                some: {
+                    OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+                },
+            };
+        } else if (restrictionState === "clear") {
+            where.NOT = [
+                ...(Array.isArray(where.NOT)
+                    ? where.NOT
+                    : where.NOT
+                        ? [where.NOT]
+                        : []),
+                {
+                    streamRestrictions: {
+                        some: {
+                            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+                        },
+                    },
+                },
+            ];
+        }
+
+        if (liveState === "live") {
+            where.hostedStreams = {
+                some: {
+                    status: StreamStatus.LIVE,
+                },
+            };
+        } else if (liveState === "offline") {
+            where.NOT = [
+                ...(Array.isArray(where.NOT)
+                    ? where.NOT
+                    : where.NOT
+                        ? [where.NOT]
+                        : []),
+                {
+                    hostedStreams: {
+                        some: {
+                            status: StreamStatus.LIVE,
+                        },
+                    },
+                },
+            ];
+        }
+
+        const orderBy: Prisma.UserOrderByWithRelationInput[] =
+            sort === "oldest"
+                ? [{ createdAt: "asc" }]
+                : sort === "username"
+                    ? [{ username: "asc" }]
+                    : [{ createdAt: "desc" }];
+
+        const [total, users] = await Promise.all([
+            this.prisma.user.count({ where }),
+            this.prisma.user.findMany({
+                where,
+                include: {
+                    profile: true,
+                    wallet: true,
+                    hostedStreams: {
+                        where: { status: StreamStatus.LIVE },
+                        orderBy: { startedAt: "desc" },
+                        take: 1,
+                        select: {
+                            id: true,
+                            title: true,
+                            status: true,
+                            startedAt: true,
+                        },
+                    },
+                    streamRestrictions: {
+                        where: {
+                            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+                        },
+                        select: {
+                            id: true,
+                        },
+                    },
+                    assetSubmissions: {
+                        orderBy: { createdAt: "desc" },
+                        take: 1,
+                        select: {
+                            id: true,
+                            type: true,
+                            status: true,
+                            createdAt: true,
+                        },
+                    },
+                    _count: {
+                        select: {
+                            hostedStreams: true,
+                            payoutRequests: true,
+                            purchaseOrders: true,
+                            favorites: true,
+                            favoritedBy: true,
+                            chatMessages: true,
+                        },
+                    },
+                },
+                orderBy,
+                skip: (page - 1) * pageSize,
+                take: pageSize,
+            }),
+        ]);
+
+        return {
+            items: users.map((user) => {
+                const hidden =
+                    hiddenRows.find((row) => row?.userId === user.id) ?? null;
+
+                const boost =
+                    boostRows.find((row) => {
+                        if (row?.userId !== user.id) return false;
+                        const expiresAt = new Date(String(row?.expiresAt || "")).getTime();
+                        return Number.isFinite(expiresAt) && expiresAt > now;
+                    }) ?? null;
+
+                const liveStream = user.hostedStreams[0] ?? null;
+                const latestAssetSubmission = user.assetSubmissions[0] ?? null;
+
+                return {
+                    ...this.mapUser(user),
+                    wallet: {
+                        coins: user.wallet?.coins ?? 0,
+                        diamondsEarned: user.wallet?.diamondsEarned ?? 0,
+                    },
+                    counts: {
+                        hostedStreams: user._count.hostedStreams,
+                        payoutRequests: user._count.payoutRequests,
+                        purchaseOrders: user._count.purchaseOrders,
+                        favorites: user._count.favorites,
+                        favoritedBy: user._count.favoritedBy,
+                        chatMessages: user._count.chatMessages,
+                    },
+                    isLive: Boolean(liveStream),
+                    liveStream: liveStream
+                        ? {
+                            id: liveStream.id,
+                            title: liveStream.title,
+                            status: liveStream.status,
+                            startedAt: liveStream.startedAt.toISOString(),
+                        }
+                        : null,
+                    activeRestrictionCount: user.streamRestrictions.length,
+                    discovery: {
+                        hidden,
+                        boost,
+                    },
+                    latestAssetSubmission: latestAssetSubmission
+                        ? {
+                            id: latestAssetSubmission.id,
+                            type: latestAssetSubmission.type,
+                            status: latestAssetSubmission.status,
+                            createdAt: latestAssetSubmission.createdAt.toISOString(),
+                        }
+                        : null,
+                };
+            }),
+            total,
+            page,
+            pageSize,
+            totalPages: Math.max(1, Math.ceil(total / pageSize)),
+            filters: {
+                search: search || null,
+                sort,
+                discoveryState,
+                restrictionState,
+                liveState,
+            },
+        };
+    }
+
+    async getById(adminUserId: string, targetUserId: string) {
+        await this.requireAdmin(adminUserId);
+
+        const user = await this.prisma.user.findUnique({
+            where: { id: targetUserId },
+            include: {
+                profile: true,
+                wallet: true,
+                _count: {
+                    select: {
+                        hostedStreams: true,
+                        payoutRequests: true,
+                        purchaseOrders: true,
+                        favorites: true,
+                        favoritedBy: true,
+                        chatMessages: true,
+                        notifications: true,
+                        pushDeviceTokens: true,
+                        reportsAsTarget: true,
+                        submittedReports: true,
+                        assetSubmissions: true,
+                    },
+                },
+            },
+        });
+
+        if (!user) {
+            throw new NotFoundException("User not found.");
+        }
+
+        const [
+            liveStream,
+            recentPayouts,
+            recentOrders,
+            activeRestrictions,
+            latestAssetSubmission,
+            discoveryHidden,
+            discoveryBoosts,
+            openBanAppealCount,
+            totalBanAppealCount,
+            recentBanAppeals,
+        ] = await Promise.all([
+            this.prisma.stream.findFirst({
+                where: {
+                    hostUserId: targetUserId,
+                    status: StreamStatus.LIVE,
+                },
+                orderBy: { startedAt: "desc" },
+            }),
+            this.prisma.payoutRequest.findMany({
+                where: { userId: targetUserId },
+                orderBy: { createdAt: "desc" },
+                take: 5,
+            }),
+            this.prisma.purchaseOrder.findMany({
+                where: { userId: targetUserId },
+                include: { pkg: true },
+                orderBy: { createdAt: "desc" },
+                take: 5,
+            }),
+            this.prisma.streamUserRestriction.findMany({
+                where: {
+                    userId: targetUserId,
+                    OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+                },
+                include: {
+                    stream: {
+                        select: {
+                            id: true,
+                            title: true,
+                        },
+                    },
+                    createdBy: {
+                        include: { profile: true },
+                    },
+                    createdByAdminUser: true,
+                },
+                orderBy: { createdAt: "desc" },
+            }),
+            this.prisma.assetSubmission.findFirst({
+                where: { userId: targetUserId },
+                orderBy: { createdAt: "desc" },
+            }),
+            this.prisma.appConfig.findUnique({
+                where: { key: "discovery_hidden" },
+            }),
+            this.prisma.appConfig.findUnique({
+                where: { key: "discovery_boosts" },
+            }),
+            this.prisma.banAppeal.count({
+                where: {
+                    userId: targetUserId,
+                    status: {
+                        in: ["PENDING", "IN_REVIEW"] as any,
+                    },
+                },
+            }),
+            this.prisma.banAppeal.count({
+                where: { userId: targetUserId },
+            }),
+            this.prisma.banAppeal.findMany({
+                where: { userId: targetUserId },
+                include: {
+                    reviewedByAdminUser: true,
+                },
+                orderBy: { createdAt: "desc" },
+                take: 5,
+            }),
+        ]);
+
+        const hiddenRows = this.normalizeDiscoveryRows(
+            discoveryHidden?.valueJson,
+        ) as DiscoveryHiddenRow[];
+
+        const boostRows = this.normalizeDiscoveryRows(
+            discoveryBoosts?.valueJson,
+        ) as DiscoveryBoostRow[];
+
+        return {
+            user: {
+                ...this.mapUser(user),
+                twoFactorEnabled: user.twoFactorEnabled,
+                notificationPushEnabled: user.notificationPushEnabled,
+                notificationLiveAlertsEnabled: user.notificationLiveAlertsEnabled,
+                notificationMarketingEnabled: user.notificationMarketingEnabled,
+            },
+            profile: user.profile
+                ? {
+                    displayName: user.profile.displayName,
+                    bio: user.profile.bio ?? null,
+                    wifw: user.profile.wifw ?? null,
+                    avatarUrl: user.profile.avatarUrl ?? null,
+                    bannerUrl: user.profile.bannerUrl ?? null,
+                    linksJson: user.profile.linksJson ?? null,
+                    badgeLabel: user.profile.badgeLabel ?? null,
+                    badgeTone: user.profile.badgeTone ?? null,
+                    vipDisplayBadgeKey: user.profile.vipDisplayBadgeKey ?? null,
+                    vipLockedBadgeKey: user.profile.vipLockedBadgeKey ?? null,
+                    vipLiveBadgeKey: user.profile.vipLiveBadgeKey ?? null,
+                    vipLockedPeriodKey: user.profile.vipLockedPeriodKey ?? null,
+                    showBadgeOnProfile: user.profile.showBadgeOnProfile,
+                    createdAt: user.profile.createdAt.toISOString(),
+                    updatedAt: user.profile.updatedAt.toISOString(),
+                }
+                : null,
+            wallet: {
+                coins: user.wallet?.coins ?? 0,
+                diamondsEarned: user.wallet?.diamondsEarned ?? 0,
+            },
+            counts: {
+                hostedStreams: user._count.hostedStreams,
+                payoutRequests: user._count.payoutRequests,
+                purchaseOrders: user._count.purchaseOrders,
+                favorites: user._count.favorites,
+                favoritedBy: user._count.favoritedBy,
+                chatMessages: user._count.chatMessages,
+                notifications: user._count.notifications,
+                pushDeviceTokens: user._count.pushDeviceTokens,
+                reportsAsTarget: user._count.reportsAsTarget,
+                submittedReports: user._count.submittedReports,
+                assetSubmissions: user._count.assetSubmissions,
+            },
+            liveStream: liveStream
+                ? {
+                    id: liveStream.id,
+                    title: liveStream.title,
+                    status: liveStream.status,
+                    startedAt: liveStream.startedAt.toISOString(),
+                }
+                : null,
+            recentPayouts: recentPayouts.map((row) => ({
+                id: row.id,
+                status: row.status,
+                diamondAmount: row.diamondAmount,
+                netAmount: row.netAmount,
+                paymentMethod: row.paymentMethod ?? null,
+                createdAt: row.createdAt.toISOString(),
+                processedAt: row.processedAt ? row.processedAt.toISOString() : null,
+            })),
+            recentOrders: recentOrders.map((row) => ({
+                id: row.id,
+                provider: row.provider,
+                status: row.status,
+                coins: row.coins,
+                priceCents: row.priceCents,
+                currency: row.currency,
+                package: {
+                    id: row.pkg.id,
+                    isActive: row.pkg.isActive,
+                    forDevUse: row.pkg.forDevUse,
+                },
+                createdAt: row.createdAt.toISOString(),
+                paidAt: row.paidAt ? row.paidAt.toISOString() : null,
+                fulfilledAt: row.fulfilledAt ? row.fulfilledAt.toISOString() : null,
+                isFulfilled: row.status === PurchaseStatus.FULFILLED,
+            })),
+            activeRestrictions: activeRestrictions.map((row) => ({
+                id: row.id,
+                kind: row.kind,
+                reason: row.reason ?? null,
+                expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
+                createdAt: row.createdAt.toISOString(),
+                stream: row.stream
+                    ? {
+                        id: row.stream.id,
+                        title: row.stream.title,
+                    }
+                    : null,
+                createdBy: row.createdBy
+                    ? {
+                        id: row.createdBy.id,
+                        username: row.createdBy.username,
+                        displayName:
+                            row.createdBy.profile?.displayName?.trim() || row.createdBy.username,
+                    }
+                    : null,
+                createdByAdminUser: row.createdByAdminUser
+                    ? {
+                        id: row.createdByAdminUser.id,
+                        email: row.createdByAdminUser.email,
+                        name: row.createdByAdminUser.name,
+                        role: row.createdByAdminUser.role,
+                        isActive: row.createdByAdminUser.isActive,
+                    }
+                    : null,
+            })),
+            discovery: {
+                hidden: hiddenRows.find((row) => row?.userId === targetUserId) ?? null,
+                boost: boostRows.find((row) => row?.userId === targetUserId) ?? null,
+            },
+            latestAssetSubmission: latestAssetSubmission
+                ? {
+                    id: latestAssetSubmission.id,
+                    type: latestAssetSubmission.type,
+                    status: latestAssetSubmission.status,
+                    originalUrl: latestAssetSubmission.originalUrl,
+                    approvedUrl: latestAssetSubmission.approvedUrl ?? null,
+                    adminNotes: latestAssetSubmission.adminNotes ?? null,
+                    reviewedAt: latestAssetSubmission.reviewedAt
+                        ? latestAssetSubmission.reviewedAt.toISOString()
+                        : null,
+                    createdAt: latestAssetSubmission.createdAt.toISOString(),
+                }
+                : null,
+            banAppeals: {
+                openCount: openBanAppealCount,
+                totalCount: totalBanAppealCount,
+                recent: recentBanAppeals.map((row) => ({
+                    id: row.id,
+                    status: row.status,
+                    appealMessage: row.appealMessage,
+                    createdAt: row.createdAt.toISOString(),
+                    reviewedAt: row.reviewedAt ? row.reviewedAt.toISOString() : null,
+                    reviewedByAdminUser: row.reviewedByAdminUser
+                        ? {
+                            id: row.reviewedByAdminUser.id,
+                            email: row.reviewedByAdminUser.email,
+                            name: row.reviewedByAdminUser.name,
+                            role: row.reviewedByAdminUser.role,
+                            isActive: row.reviewedByAdminUser.isActive,
+                        }
+                        : null,
+                })),
+            },
+        };
+    }
+
+    async getReports(
+        adminUserId: string,
+        targetUserId: string,
+        options: AdminUserReportsQueryDto = {},
+    ) {
+        await this.requireAdmin(adminUserId);
+
+        const page = this.normalizePage((options as any).page, 1);
+        const pageSize = this.normalizePageSize((options as any).pageSize, 10);
+        const search = String((options as any).search || "").trim();
+        const status = this.parseReportStatus((options as any).status);
+
+        const conditions: Prisma.ReportWhereInput[] = [
+            {
+                OR: [
+                    { targetUserId },
+                    { targetStream: { is: { hostUserId: targetUserId } } },
+                    { targetChatMessage: { is: { userId: targetUserId } } },
+                    { targetDmMessage: { is: { senderId: targetUserId } } },
+                ],
+            },
+        ];
+
+        if (status !== "any") {
+            conditions.push({ status });
+        }
+
+        if (search) {
+            const searchOr: Prisma.ReportWhereInput[] = [
+                { description: { contains: search, mode: "insensitive" } },
+                { reporter: { is: { username: { contains: search, mode: "insensitive" } } } },
+                {
+                    reporter: {
+                        is: {
+                            profile: {
+                                is: {
+                                    displayName: { contains: search, mode: "insensitive" },
+                                },
+                            },
+                        },
+                    },
+                },
+                { targetUser: { is: { username: { contains: search, mode: "insensitive" } } } },
+                { targetStream: { is: { title: { contains: search, mode: "insensitive" } } } },
+                { targetChatMessage: { is: { text: { contains: search, mode: "insensitive" } } } },
+                { targetDmMessage: { is: { text: { contains: search, mode: "insensitive" } } } },
+            ];
+
+            if (this.isUuid(search)) {
+                searchOr.unshift({ id: { equals: search } });
+            }
+
+            conditions.push({
+                OR: searchOr,
+            });
+        }
+
+        const where: Prisma.ReportWhereInput =
+            conditions.length === 1 ? conditions[0] : { AND: conditions };
+
+        const [total, items] = await Promise.all([
+            this.prisma.report.count({ where }),
+            this.prisma.report.findMany({
+                where,
+                include: {
+                    reporter: {
+                        include: { profile: true },
+                    },
+                    assignedAdminUser: true,
+                    targetUser: {
+                        include: { profile: true },
+                    },
+                    targetStream: {
+                        include: {
+                            host: {
+                                include: { profile: true },
+                            },
+                        },
+                    },
+                    targetChatMessage: {
+                        include: {
+                            user: {
+                                include: { profile: true },
+                            },
+                            stream: {
+                                include: {
+                                    host: {
+                                        include: { profile: true },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    targetDmMessage: {
+                        include: {
+                            sender: {
+                                include: { profile: true },
+                            },
+                        },
+                    },
+                },
+                orderBy: { createdAt: "desc" },
+                skip: (page - 1) * pageSize,
+                take: pageSize,
+            }),
+        ]);
+
+        return {
+            items: items.map((item) => this.mapReportSummary(item)),
+            total,
+            page,
+            pageSize,
+            totalPages: Math.max(1, Math.ceil(total / pageSize)),
+            filters: {
+                status,
+                search: search || null,
+            },
+        };
+    }
+}

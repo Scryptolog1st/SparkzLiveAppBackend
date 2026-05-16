@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+# Battle Stage 2I - 1v1 backend smoke-test helper template.
+#
+# This file is intentionally an example and is not executed by the patch.
+# Copy it to a local scratch file, fill in the variables, then run manually.
+#
+# Required tools: bash, curl, jq.
+
+set -e
+set -u
+set -o pipefail
+
+API_BASE="${API_BASE:-http://localhost:3001}"
+
+SENDER_TOKEN="${SENDER_TOKEN:-}"
+RECIPIENT_TOKEN="${RECIPIENT_TOKEN:-}"
+VIEWER_TOKEN="${VIEWER_TOKEN:-}"
+
+SENDER_STREAM_ID="${SENDER_STREAM_ID:-}"
+RECIPIENT_STREAM_ID="${RECIPIENT_STREAM_ID:-}"
+SENDER_HOST_USER_ID="${SENDER_HOST_USER_ID:-}"
+RECIPIENT_HOST_USER_ID="${RECIPIENT_HOST_USER_ID:-}"
+GIFT_ID="${GIFT_ID:-rose}"
+
+require_var() {
+  local name="$1"
+  local value="${!name:-}"
+  if [ -z "$value" ]; then
+    echo "Missing required variable: $name" >&2
+    exit 1
+  fi
+}
+
+for name in   API_BASE   SENDER_TOKEN   RECIPIENT_TOKEN   VIEWER_TOKEN   SENDER_STREAM_ID   RECIPIENT_STREAM_ID   SENDER_HOST_USER_ID   RECIPIENT_HOST_USER_ID   GIFT_ID
+do
+  require_var "$name"
+done
+
+api_get() {
+  local token="$1"
+  local path="$2"
+  curl -sS     -H "Authorization: Bearer $token"     "$API_BASE$path"
+}
+
+api_post_json() {
+  local token="$1"
+  local path="$2"
+  local body="$3"
+  curl -sS     -X POST     -H "Authorization: Bearer $token"     -H "Content-Type: application/json"     -d "$body"     "$API_BASE$path"
+}
+
+echo ""
+echo "1) Eligible hosts"
+api_get "$SENDER_TOKEN" "/streams/$SENDER_STREAM_ID/battles/eligible-hosts?type=ONE_V_ONE" | jq .
+
+echo ""
+echo "2) Create direct invite"
+CREATE_RESPONSE="$(api_post_json "$SENDER_TOKEN" "/streams/$SENDER_STREAM_ID/battles/direct-invites" "$(cat <<JSON
+{
+  "battleType": "ONE_V_ONE",
+  "recipientHostUserId": "$RECIPIENT_HOST_USER_ID",
+  "durationSeconds": 60
+}
+JSON
+)")"
+echo "$CREATE_RESPONSE" | jq .
+
+BATTLE_ID="$(echo "$CREATE_RESPONSE" | jq -r '.battleId')"
+INVITE_ID="$(echo "$CREATE_RESPONSE" | jq -r '.inviteId')"
+SIDE_A_ID="$(echo "$CREATE_RESPONSE" | jq -r '.battle.sides[] | select(.sideKey == "A") | .id')"
+SIDE_B_ID="$(echo "$CREATE_RESPONSE" | jq -r '.battle.sides[] | select(.sideKey == "B") | .id')"
+
+echo "BATTLE_ID=$BATTLE_ID"
+echo "INVITE_ID=$INVITE_ID"
+echo "SIDE_A_ID=$SIDE_A_ID"
+echo "SIDE_B_ID=$SIDE_B_ID"
+
+echo ""
+echo "3) Sender invite list"
+api_get "$SENDER_TOKEN" "/streams/$SENDER_STREAM_ID/battles/invites" | jq .
+
+echo ""
+echo "4) Recipient invite list"
+api_get "$RECIPIENT_TOKEN" "/streams/$RECIPIENT_STREAM_ID/battles/invites" | jq .
+
+echo ""
+echo "5) Recipient accepts"
+api_post_json "$RECIPIENT_TOKEN" "/battle-sessions/$BATTLE_ID/invites/$INVITE_ID/accept" '{}' | jq .
+
+echo ""
+echo "6) Sender active battle"
+api_get "$SENDER_TOKEN" "/streams/$SENDER_STREAM_ID/battles/v2/active" | jq .
+
+echo ""
+echo "7) Recipient active battle"
+api_get "$RECIPIENT_TOKEN" "/streams/$RECIPIENT_STREAM_ID/battles/v2/active" | jq .
+
+echo ""
+echo "8) Viewer gifts side A"
+api_post_json "$VIEWER_TOKEN" "/streams/$SENDER_STREAM_ID/gifts/send" "$(cat <<JSON
+{
+  "giftId": "$GIFT_ID",
+  "recipientUserId": "$SENDER_HOST_USER_ID",
+  "quantity": 1,
+  "battleSideId": "$SIDE_A_ID",
+  "idempotencyKey": "stage2i-side-a-$(date +%s)"
+}
+JSON
+)" | jq .
+
+echo ""
+echo "9) Viewer gifts side B from sender stream"
+api_post_json "$VIEWER_TOKEN" "/streams/$SENDER_STREAM_ID/gifts/send" "$(cat <<JSON
+{
+  "giftId": "$GIFT_ID",
+  "recipientUserId": "$RECIPIENT_HOST_USER_ID",
+  "quantity": 1,
+  "battleSideId": "$SIDE_B_ID",
+  "idempotencyKey": "stage2i-side-b-$(date +%s)"
+}
+JSON
+)" | jq .
+
+echo ""
+echo "10) Active battle after gifts"
+api_get "$SENDER_TOKEN" "/streams/$SENDER_STREAM_ID/battles/v2/active" | jq .
+
+echo ""
+echo "When the battle timer expires, run this manually:"
+echo "curl -sS -X POST -H \"Authorization: Bearer \$SENDER_TOKEN\" \"$API_BASE/battle-sessions/$BATTLE_ID/process-expiry\" | jq ."
+
+echo ""
+echo "Then test rematch votes during cooldown manually:"
+echo "curl -sS -X POST -H \"Authorization: Bearer \$SENDER_TOKEN\" -H 'Content-Type: application/json' -d '{\"vote\":\"REMATCH\"}' \"$API_BASE/battle-sessions/$BATTLE_ID/rematch-vote\" | jq ."
+echo "curl -sS -X POST -H \"Authorization: Bearer \$RECIPIENT_TOKEN\" -H 'Content-Type: application/json' -d '{\"vote\":\"REMATCH\"}' \"$API_BASE/battle-sessions/$BATTLE_ID/rematch-vote\" | jq ."

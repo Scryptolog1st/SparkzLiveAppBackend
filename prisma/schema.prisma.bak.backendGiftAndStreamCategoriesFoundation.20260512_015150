@@ -1,0 +1,2296 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum StreamStatus {
+  LIVE
+  ENDED
+}
+
+enum StreamVisibility {
+  PUBLIC
+  FOLLOWERS
+  PRIVATE
+}
+
+enum StreamRole {
+  HOST
+  GUEST
+  MODERATOR
+  VIEWER
+}
+
+enum StreamStaffRole {
+  VIEWER
+  MODERATOR
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum StreamPermissionKey {
+  MUTE_CHAT
+  KICK_VIEWER
+  BAN_VIEWER
+  CONTROL_GUEST_MEDIA
+  REMOVE_GUESTS
+  APPROVE_GUEST_REQUESTS
+  CHANGE_LAYOUT
+  EDIT_STREAM_GOAL
+  EDIT_PINNED_MESSAGE
+  ASSIGN_STAFF_ROLES
+}
+
+enum RestrictionKind {
+  MUTE
+  CHAT_MUTE
+  KICKED
+  BAN
+}
+
+enum ModerationActionType {
+  KICK
+  MUTE
+  CHAT_MUTE
+  BAN
+  UNMUTE
+  CHAT_UNMUTE
+  UNBAN
+  STREAM_TERMINATE
+  USER_BAN
+  USER_UNBAN
+}
+
+enum BattleStatus {
+  PENDING
+  ACTIVE
+  ENDED
+  DECLINED
+  CANCELLED
+}
+
+enum GiftMediaType {
+  VIDEO
+  LOTTIE
+  GIF
+  IMAGE
+}
+
+enum LedgerEntryType {
+  GIFT_SEND
+  GIFT_RECEIVE
+  ADMIN_ADJUST
+  PURCHASE_CREDIT
+  PAYOUT_DEBIT
+  PURCHASE_REVERSAL
+  GIFT_REVERSAL
+  PAYOUT_REVERSAL
+  CHARGEBACK_REVERSAL
+  ADVERTISEMENT_DEBIT
+  ADVERTISEMENT_RENEWAL_DEBIT
+  ADVERTISEMENT_REVERSAL
+  ADVERTISEMENT_BOOST_DEBIT
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  PAID
+  REJECTED
+  CANCELLED
+  FAILED
+  RETURNED
+  UNCLAIMED
+}
+
+enum CoinLotSourceType {
+  PURCHASE
+  ADMIN_ADJUST
+  LEGACY_MIGRATION
+}
+
+enum CoinLotStatus {
+  PENDING
+  AVAILABLE
+  REFUNDED
+  CHARGED_BACK
+  REVERSED
+}
+
+enum StreamerEarningStatus {
+  PENDING
+  AVAILABLE
+  LOCKED
+  PAID
+  REVERSED
+}
+
+enum PayoutProvider {
+  MANUAL
+  STRIPE
+  PAYPAL
+}
+
+enum PayoutMethodType {
+  PAYPAL
+  STRIPE_BANK
+  STRIPE_DEBIT
+  MANUAL
+}
+
+enum PayoutMethodStatus {
+  PENDING
+  ACTIVE
+  DISABLED
+  FAILED
+}
+
+enum DirectMessageType {
+  TEXT
+  GIF
+  IMAGE
+  GIFT
+}
+
+enum ConversationRequestStatus {
+  NONE
+  PENDING
+  ACCEPTED
+  DENIED
+}
+
+enum ConversationRequestOrigin {
+  NORMAL
+  ADVERTISEMENT
+}
+
+enum ConversationThreadType {
+  NORMAL
+  ADVERTISEMENT_JOB
+}
+
+enum DirectMessageOrigin {
+  NORMAL
+  ADVERTISEMENT
+}
+
+enum PushPlatform {
+  ANDROID
+  IOS
+  UNKNOWN
+}
+
+enum AssetSubmissionType {
+  CUSTOM_EMOTE
+  SUB_BADGE
+  PROFILE_BANNER
+  PROFILE_AVATAR
+}
+
+enum AssetSubmissionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  ADMIN
+  MODERATOR
+  ANALYST
+}
+
+enum ReportTargetType {
+  USER
+  STREAM
+  CHAT_MESSAGE
+  DM_MESSAGE
+}
+
+enum ReportReasonCode {
+  NUDITY
+  HARASSMENT_OR_BULLYING
+  RACISM_OR_HATE
+  THREATS
+  INAPPROPRIATE_BEHAVIOR
+  RULE_BREAKING_STREAM
+  ABUSIVE_CHAT_MESSAGE
+  ABUSIVE_DM
+  OTHER
+}
+
+enum ReportStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  DISMISSED
+  ESCALATED
+}
+
+enum ReportAuditAction {
+  CREATED
+  STATUS_CHANGED
+  ASSIGNED
+  NOTE_ADDED
+  ACTION_TAKEN
+  DISMISSED
+  ESCALATED
+}
+
+enum BanAppealStatus {
+  PENDING
+  IN_REVIEW
+  APPROVED
+  DENIED
+}
+
+enum EmailSmtpAccountStatus {
+  ACTIVE
+  DISABLED
+  FAILING
+  ARCHIVED
+}
+
+enum EmailCategory {
+  AUTH_VERIFY_EMAIL
+  AUTH_PASSWORD_RESET
+  AUTH_EMAIL_CHANGE_VERIFY
+  BAN_APPEAL_RECEIVED
+  BAN_APPEAL_APPROVED
+  BAN_APPEAL_DENIED
+  ACCOUNT_CREATED
+  ACCOUNT_DELETED
+  PURCHASE_CONFIRMATION
+  PAYOUT_REQUEST_RECEIVED
+  PAYOUT_APPROVED
+  PAYOUT_DENIED
+  PAYOUT_PROCESSED
+  SUPPORT_REPLY
+  ADMIN_MANUAL_MESSAGE
+  MARKETING_CAMPAIGN
+}
+
+enum EmailTemplateStatus {
+  DRAFT
+  ACTIVE
+}
+
+enum EmailTemplateEditorType {
+  MJML
+  HTML
+}
+
+enum EmailTemplateVersionStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum EmailDeliveryStatus {
+  QUEUED
+  SENDING
+  SENT
+  FAILED
+  BOUNCED
+}
+
+enum AdminAuditActionType {
+  VIEW
+  CREATE
+  UPDATE
+  DELETE
+  STATUS_CHANGE
+  MODERATION_ACTION
+  SYSTEM_ACTION
+  AUTH_ACTION
+  PERMISSION_ACTION
+  EXPORT
+}
+
+enum AdminAuditStatus {
+  SUCCESS
+  DENIED
+  FAILED
+}
+
+enum AdminAuditSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum AdvertisementStatus {
+  DRAFT
+  PENDING_REVIEW
+  DENIED
+  LIVE
+  CANCELLED_ENDING
+  INACTIVE
+  EXPIRED
+  PAYMENT_FAILED
+  ADMIN_PAUSED
+}
+
+enum AdvertisementRevisionStatus {
+  PENDING_REVIEW
+  APPROVED
+  DENIED
+  SUPERSEDED
+}
+
+enum AdvertisementMediaType {
+  IMAGE
+  VIDEO
+}
+
+enum AdvertisementPaymentCurrency {
+  DIAMONDS
+  COINS
+}
+
+enum AdvertisementBillingEventType {
+  INITIAL_CHARGE
+  RENEWAL
+  REPUBLISH
+  RETRY_PAYMENT
+  REFUND
+  ADMIN_ADJUSTMENT
+  BOOST
+}
+
+enum AdvertisementBillingEventStatus {
+  SUCCEEDED
+  FAILED
+  SKIPPED
+}
+
+enum AdvertisementJobStatus {
+  INQUIRY_OPEN
+  DECLINED
+  IN_PROGRESS
+  SELLER_MARKED_COMPLETE
+  COMPLETED
+  CANCELLED
+}
+
+enum VipBadgeKey {
+  GREEN
+  YELLOW
+  ORANGE
+  RED
+  PINK
+  PURPLE
+  BLACK
+  GOLD
+  PLATINUM
+  DIAMOND
+  ANODIZED_TITANIUM
+}
+
+enum PurchaseProvider {
+  DEV
+  STRIPE
+  REVENUECAT
+  APPLE
+  GOOGLE
+}
+
+enum BadgeStatus {
+  DRAFT
+  ACTIVE
+  DISABLED
+}
+
+enum PurchaseStatus {
+  PENDING
+  PAID
+  FULFILLED
+  FAILED
+  CANCELED
+}
+
+enum NotificationType {
+  SYSTEM
+  STREAM_STARTED
+  GIFT_RECEIVED
+  MILESTONE_REACHED
+  BATTLE_ENDED
+  MODERATION
+}
+
+model User {
+  id                 String    @id @default(uuid()) @db.Uuid
+  email              String    @unique
+  username           String    @unique
+  publicId           String    @unique @map("public_id") @db.VarChar(13)
+  passwordHash       String    @map("password_hash")
+  emailUpdatedAt     DateTime? @map("email_updated_at")
+  emailVerifiedAt    DateTime? @map("email_verified_at")
+  lastUsernameChange DateTime? @map("last_username_change")
+  lastLoginAt        DateTime? @map("last_login_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  profile       Profile?
+  refreshTokens RefreshToken[]
+  schedules     StreamSchedule[]
+
+  milestones      DiamondMilestone[] @relation("MilestoneOwner")
+  milestonesGiven DiamondMilestone[] @relation("MilestoneGiver")
+
+  hostedStreams      Stream[]            @relation("StreamHost")
+  streamParticipants StreamParticipant[]
+
+  chatMessages ChatMessage[]
+
+  streamRoles            StreamUserRole[]
+  streamRolesAssigned    StreamUserRole[]        @relation("StreamRoleAssignedBy")
+  streamStaffAssignments StreamStaffAssignment[] @relation("StreamStaffAssignmentUser")
+  streamStaffAssignedBy  StreamStaffAssignment[] @relation("StreamStaffAssignmentAssignedBy")
+  streamRestrictions     StreamUserRestriction[]
+  restrictionsCreated    StreamUserRestriction[] @relation("RestrictionCreatedBy")
+  moderationAsActor      ModerationAction[]      @relation("ModerationActor")
+  moderationAsTarget     ModerationAction[]      @relation("ModerationTarget")
+
+  wallet              Wallet?
+  walletLedgerEntries WalletLedger[]
+  giftsSent           GiftTransaction[] @relation("GiftSender")
+  giftsReceived       GiftTransaction[] @relation("GiftRecipient")
+
+  battlesAsHost         Battle[]             @relation("BattleHost")
+  battlesAsOpponent     Battle[]             @relation("BattleOpponent")
+  battlesWon            Battle[]             @relation("BattleWinner")
+  battleContribSent     BattleContribution[] @relation("BattleContributionSender")
+  battleContribReceived BattleContribution[] @relation("BattleContributionRecipient")
+
+  purchaseOrders PurchaseOrder[]
+  vipMonths      UserVipMonth[]
+
+  favorites           UserFavorite[]       @relation("UserFavorites")
+  favoritedBy         UserFavorite[]       @relation("UserFavoritedBy")
+  streamGuestRequests StreamGuestRequest[]
+
+  twoFactorEnabled     Boolean  @default(false) @map("two_factor_enabled")
+  twoFactorSecret      String?  @map("two_factor_secret")
+  twoFactorBackupCodes String[]
+
+  blocksCreated UserBlock[] @relation("Blocker")
+  blockedBy     UserBlock[] @relation("Blocked")
+
+  dmUnlockGiftId    String?         @map("dm_unlock_gift_id")
+  dmUnlockGift      Gift?           @relation("UserDmUnlockGift", fields: [dmUnlockGiftId], references: [id], onDelete: SetNull)
+  conversationsAsP1 Conversation[]  @relation("ConversationParticipant1")
+  conversationsAsP2 Conversation[]  @relation("ConversationParticipant2")
+  directMessages    DirectMessage[] @relation("DirectMessageSender")
+
+  payoutRequests PayoutRequest[]
+
+  notificationPushEnabled       Boolean @default(true) @map("notification_push_enabled")
+  notificationLiveAlertsEnabled Boolean @default(true) @map("notification_live_alerts_enabled")
+  notificationMarketingEnabled  Boolean @default(false) @map("notification_marketing_enabled")
+
+  streamOptionsOrder String[] @default([]) @map("stream_options_order")
+
+  pushDeviceTokens PushDeviceToken[]
+
+  notifications Notification[]
+
+  submittedReports Report[] @relation("ReportReporter")
+  reportsAsTarget  Report[] @relation("ReportTargetUser")
+
+  assetSubmissions         AssetSubmission[] @relation("AssetSubmissionUser")
+  reviewedAssetSubmissions AssetSubmission[] @relation("AssetSubmissionReviewer")
+
+  coinLots         CoinLot[]
+  streamerEarnings StreamerEarning[] @relation("StreamerEarnings")
+  payoutMethods    PayoutMethod[]
+
+  feedPosts        FeedPost[]        @relation("FeedPostAuthor")
+  storyPosts       StoryPost[]       @relation("StoryPostAuthor")
+  feedPostLikes    FeedPostLike[]    @relation("FeedPostLikeUser")
+  feedPostComments FeedPostComment[] @relation("FeedPostCommentAuthor")
+
+  advertisements                  Advertisement[]             @relation("AdvertisementOwner")
+  advertisementRevisionsSubmitted AdvertisementRevision[]     @relation("AdvertisementRevisionSubmitter")
+  advertisementBillingEvents      AdvertisementBillingEvent[]
+  advertisementJobsAsAdvertiser   AdvertisementJob[]          @relation("AdvertisementJobAdvertiser")
+  advertisementJobsAsCustomer     AdvertisementJob[]          @relation("AdvertisementJobCustomer")
+  advertisementReviewsGiven       AdvertisementReview[]       @relation("AdvertisementReviewReviewer")
+  advertisementReviewsReceived    AdvertisementReview[]       @relation("AdvertisementReviewAdvertiser")
+
+  isPlatformBanned            Boolean     @default(false) @map("is_platform_banned")
+  platformBanIssuedAt         DateTime?   @map("platform_ban_issued_at")
+  platformBanExpiresAt        DateTime?   @map("platform_ban_expires_at")
+  platformBanReason           String?     @map("platform_ban_reason") @db.VarChar(300)
+  platformBannedByAdminUserId String?     @map("platform_banned_by_admin_user_id") @db.Uuid
+  forceLogoutAt               DateTime?   @map("force_logout_at")
+  banAppeals                  BanAppeal[]
+  assignedBadges              UserBadge[]
+
+  @@map("users")
+}
+
+model AdminUser {
+  id                 String    @id @default(uuid()) @db.Uuid
+  email              String    @unique
+  name               String
+  passwordHash       String    @map("password_hash")
+  role               AdminRole @default(ADMIN)
+  isActive           Boolean   @default(true) @map("is_active")
+  forcePasswordReset Boolean   @default(false) @map("force_password_reset")
+  createdById        String?   @map("created_by_id") @db.Uuid
+  lastLoginAt        DateTime? @map("last_login_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  assignedReports Report[]         @relation("ReportAssignedAdmin")
+  reportAuditLogs ReportAuditLog[] @relation("ReportAuditActor")
+  adminAuditLogs  AdminAuditLog[]  @relation("AdminAuditActor")
+
+  moderationActionsAsAdminActor ModerationAction[]      @relation("AdminModerationActor")
+  restrictionsCreatedAsAdmin    StreamUserRestriction[] @relation("AdminRestrictionCreatedBy")
+
+  reviewedAdvertisementRevisions AdvertisementRevision[] @relation("AdvertisementRevisionReviewer")
+  pausedAdvertisements           Advertisement[]         @relation("AdvertisementPausedByAdmin")
+
+  reviewedBanAppeals BanAppeal[] @relation("BanAppealReviewer")
+
+  @@index([role])
+  @@index([isActive])
+  @@index([createdById])
+  @@map("admin_users")
+}
+
+model AdminRolePermission {
+  id         String    @id @default(uuid()) @db.Uuid
+  role       AdminRole
+  permission String    @db.VarChar(120)
+  enabled    Boolean   @default(true)
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  @@unique([role, permission])
+  @@index([role])
+  @@index([role, enabled])
+  @@map("admin_role_permissions")
+}
+
+model AdminAuditLog {
+  id               String    @id @default(uuid()) @db.Uuid
+  actorAdminUserId String    @map("actor_admin_user_id") @db.Uuid
+  actorEmail       String    @map("actor_email") @db.VarChar(255)
+  actorName        String    @map("actor_name") @db.VarChar(160)
+  actorRole        AdminRole @map("actor_role")
+
+  actionType  AdminAuditActionType @map("action_type")
+  actionCode  String               @map("action_code") @db.VarChar(160)
+  actionLabel String               @map("action_label") @db.VarChar(255)
+
+  resourceType String  @map("resource_type") @db.VarChar(120)
+  resourceId   String? @map("resource_id") @db.VarChar(120)
+
+  status   AdminAuditStatus   @default(SUCCESS)
+  severity AdminAuditSeverity @default(INFO)
+
+  targetUserId          String? @map("target_user_id") @db.Uuid
+  targetStreamId        String? @map("target_stream_id") @db.Uuid
+  targetReportId        String? @map("target_report_id") @db.Uuid
+  targetPayoutRequestId String? @map("target_payout_request_id") @db.Uuid
+  targetSupportTicketId String? @map("target_support_ticket_id") @db.VarChar(120)
+
+  targetSummaryJson        Json? @map("target_summary_json")
+  secondaryIdentifiersJson Json? @map("secondary_identifiers_json")
+  referencesJson           Json? @map("references_json")
+
+  requestPath   String? @map("request_path") @db.VarChar(500)
+  ipAddress     String? @map("ip_address") @db.VarChar(128)
+  locationLabel String? @map("location_label") @db.VarChar(255)
+  deviceLabel   String? @map("device_label") @db.VarChar(255)
+  userAgent     String? @map("user_agent") @db.VarChar(1000)
+
+  beforeStateJson Json? @map("before_state_json")
+  afterStateJson  Json? @map("after_state_json")
+  diffJson        Json? @map("diff_json")
+  metadataJson    Json? @map("metadata_json")
+  rawEventJson    Json? @map("raw_event_json")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  actorAdminUser AdminUser @relation("AdminAuditActor", fields: [actorAdminUserId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([actorAdminUserId, createdAt])
+  @@index([actorRole, createdAt])
+  @@index([actionType, createdAt])
+  @@index([actionCode, createdAt])
+  @@index([resourceType, createdAt])
+  @@index([resourceId, createdAt])
+  @@index([status, createdAt])
+  @@index([severity, createdAt])
+  @@index([targetUserId, createdAt])
+  @@index([targetStreamId, createdAt])
+  @@index([targetReportId, createdAt])
+  @@index([targetPayoutRequestId, createdAt])
+  @@index([targetSupportTicketId, createdAt])
+  @@map("admin_audit_logs")
+}
+
+model PayoutRequest {
+  id            String       @id @default(uuid()) @db.Uuid
+  userId        String       @map("user_id") @db.Uuid
+  diamondAmount Int          @map("diamond_amount")
+  netAmount     Int          @map("net_amount_cents")
+  status        PayoutStatus @default(PENDING)
+
+  idempotencyKey String? @map("idempotency_key") @db.VarChar(120)
+
+  provider PayoutProvider @default(MANUAL)
+
+  grossAmount Int @default(0) @map("gross_amount_cents")
+  feeAmount   Int @default(0) @map("fee_amount_cents")
+
+  payoutMethodId String? @map("payout_method_id") @db.Uuid
+
+  paymentMethod  String? @map("payment_method")
+  paymentDetails Json?   @map("payment_details")
+
+  providerBatchId  String? @map("provider_batch_id")
+  providerPayoutId String? @map("provider_payout_id")
+  providerStatus   String? @map("provider_status")
+  providerResponse Json?   @map("provider_response")
+
+  adminNotes  String?   @map("admin_notes")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  processedAt DateTime? @map("processed_at")
+  paidAt      DateTime? @map("paid_at")
+  failedAt    DateTime? @map("failed_at")
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payoutMethod PayoutMethod? @relation(fields: [payoutMethodId], references: [id], onDelete: SetNull)
+
+  earnings StreamerEarning[]
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, status])
+  @@index([createdAt])
+  @@index([provider, providerPayoutId])
+  @@index([payoutMethodId])
+  @@map("payout_requests")
+}
+
+model UserFavorite {
+  userId         String   @map("user_id") @db.Uuid
+  favoriteUserId String   @map("favorite_user_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  user         User @relation("UserFavorites", fields: [userId], references: [id], onDelete: Cascade)
+  favoriteUser User @relation("UserFavoritedBy", fields: [favoriteUserId], references: [id], onDelete: Cascade)
+
+  @@id([userId, favoriteUserId])
+  @@index([userId, createdAt])
+  @@index([favoriteUserId, createdAt])
+  @@map("user_favorites")
+}
+
+model Profile {
+  userId             String       @id @map("user_id") @db.Uuid
+  displayName        String       @map("display_name")
+  bio                String?      @db.VarChar(1000)
+  wifw               Json?
+  avatarUrl          String?      @map("avatar_url")
+  bannerUrl          String?      @map("banner_url")
+  linksJson          Json?        @map("links_json")
+  badgeLabel         String?      @map("badge_label") @db.VarChar(80)
+  badgeTone          String?      @map("badge_tone") @db.VarChar(32)
+  vipDisplayBadgeKey VipBadgeKey? @map("vip_display_badge_key")
+  vipLockedBadgeKey  VipBadgeKey? @map("vip_locked_badge_key")
+  vipLiveBadgeKey    VipBadgeKey? @map("vip_live_badge_key")
+  vipLockedPeriodKey String?      @map("vip_locked_period_key") @db.VarChar(7)
+  showBadgeOnProfile Boolean      @default(true) @map("show_badge_on_profile")
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([vipDisplayBadgeKey])
+  @@index([vipLockedBadgeKey])
+  @@map("profiles")
+}
+
+model FeedPost {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  imageUrl  String    @map("image_url") @db.VarChar(1000)
+  caption   String?   @db.VarChar(500)
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  user     User              @relation("FeedPostAuthor", fields: [userId], references: [id], onDelete: Cascade)
+  likes    FeedPostLike[]
+  comments FeedPostComment[]
+
+  @@index([deletedAt, createdAt])
+  @@index([userId, createdAt])
+  @@map("feed_posts")
+}
+
+model FeedPostLike {
+  postId    String   @map("post_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  post FeedPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User     @relation("FeedPostLikeUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([postId, userId])
+  @@index([userId, createdAt])
+  @@index([postId, createdAt])
+  @@map("feed_post_likes")
+}
+
+model FeedPostComment {
+  id        String    @id @default(uuid()) @db.Uuid
+  postId    String    @map("post_id") @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  text      String    @db.VarChar(500)
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  post FeedPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User     @relation("FeedPostCommentAuthor", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([postId, deletedAt, createdAt])
+  @@index([userId, createdAt])
+  @@map("feed_post_comments")
+}
+
+model StoryPost {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  mediaUrl  String    @map("media_url") @db.VarChar(1000)
+  caption   String?   @db.VarChar(500)
+  expiresAt DateTime  @map("expires_at")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  user User @relation("StoryPostAuthor", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt, deletedAt, createdAt])
+  @@index([userId, createdAt])
+  @@map("story_posts")
+}
+
+model AdvertisementSettings {
+  id                        String    @id @default("default")
+  enabled                   Boolean   @default(true)
+  monthlyDiamondPrice       Int       @default(250) @map("monthly_diamond_price")
+  coinToDiamondRate         Int       @default(2) @map("coin_to_diamond_rate")
+  allowedDurationOptions    String[]  @default(["1", "3", "6", "12", "ONGOING"]) @map("allowed_duration_options")
+  allowedPaymentCurrencies  String[]  @default(["DIAMONDS", "COINS"]) @map("allowed_payment_currencies")
+  rules                     String[]  @default([])
+  maxMediaItems             Int       @default(8) @map("max_media_items")
+  maxVideoSeconds           Int       @default(30) @map("max_video_seconds")
+  maxTitleLength            Int       @default(90) @map("max_title_length")
+  maxShortDescriptionLength Int       @default(180) @map("max_short_description_length")
+  maxDescriptionLength      Int       @default(1600) @map("max_description_length")
+  maxServiceDetailsLength   Int       @default(1600) @map("max_service_details_length")
+  boostEnabled              Boolean   @default(true) @map("boost_enabled")
+  boostDurationHours        Int       @default(24) @map("boost_duration_hours")
+  boostDiamondPrice         Int       @default(100) @map("boost_diamond_price")
+  promoEnabled              Boolean   @default(false) @map("promo_enabled")
+  promoFreeAdCreation       Boolean   @default(false) @map("promo_free_ad_creation")
+  promoLabel                String?   @map("promo_label") @db.VarChar(120)
+  promoDiscountType         String    @default("PERCENT") @map("promo_discount_type") @db.VarChar(20)
+  promoDiscountValue        Int       @default(0) @map("promo_discount_value")
+  promoStartsAt             DateTime? @map("promo_starts_at")
+  promoEndsAt               DateTime? @map("promo_ends_at")
+  updatedByAdminUserId      String?   @map("updated_by_admin_user_id") @db.Uuid
+  createdAt                 DateTime  @default(now()) @map("created_at")
+  updatedAt                 DateTime  @updatedAt @map("updated_at")
+
+  @@map("advertisement_settings")
+}
+
+model Advertisement {
+  id                        String              @id @default(uuid()) @db.Uuid
+  ownerUserId               String              @map("owner_user_id") @db.Uuid
+  status                    AdvertisementStatus @default(PENDING_REVIEW)
+  currentRevisionId         String?             @map("current_revision_id") @db.Uuid
+  latestSubmittedRevisionId String?             @map("latest_submitted_revision_id") @db.Uuid
+
+  paymentCurrency         AdvertisementPaymentCurrency @default(DIAMONDS) @map("payment_currency")
+  monthlyDiamondPrice     Int                          @default(250) @map("monthly_diamond_price")
+  monthlyCoinPrice        Int                          @default(500) @map("monthly_coin_price")
+  requestedDurationCycles Int?                         @map("requested_duration_cycles")
+  remainingCycles         Int?                         @map("remaining_cycles")
+
+  billingAnchorDay      Int?      @map("billing_anchor_day")
+  currentCycleStartedAt DateTime? @map("current_cycle_started_at")
+  currentCycleEndsAt    DateTime? @map("current_cycle_ends_at")
+  nextBillingAt         DateTime? @map("next_billing_at")
+  lastBilledAt          DateTime? @map("last_billed_at")
+
+  cancelAtCycleEnd Boolean   @default(false) @map("cancel_at_cycle_end")
+  cancelledAt      DateTime? @map("cancelled_at")
+
+  adminPausedAt            DateTime? @map("admin_paused_at")
+  adminPausedByAdminUserId String?   @map("admin_paused_by_admin_user_id") @db.Uuid
+  adminPauseReason         String?   @map("admin_pause_reason") @db.VarChar(500)
+
+  latestDenialReason       String?   @map("latest_denial_reason") @db.VarChar(1000)
+  lastPaymentFailureReason String?   @map("last_payment_failure_reason") @db.VarChar(1000)
+  boostedUntil             DateTime? @map("boosted_until")
+  lastBoostedAt            DateTime? @map("last_boosted_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  owner         User                        @relation("AdvertisementOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  pausedByAdmin AdminUser?                  @relation("AdvertisementPausedByAdmin", fields: [adminPausedByAdminUserId], references: [id], onDelete: SetNull)
+  revisions     AdvertisementRevision[]
+  billingEvents AdvertisementBillingEvent[]
+  jobs          AdvertisementJob[]
+  reviews       AdvertisementReview[]
+
+  @@index([ownerUserId, status])
+  @@index([status, nextBillingAt])
+  @@index([status, currentCycleEndsAt])
+  @@index([status, boostedUntil])
+  @@index([currentRevisionId])
+  @@index([latestSubmittedRevisionId])
+  @@map("advertisements")
+}
+
+model AdvertisementRevision {
+  id                    String  @id @default(uuid()) @db.Uuid
+  advertisementId       String  @map("advertisement_id") @db.Uuid
+  submittedByUserId     String  @map("submitted_by_user_id") @db.Uuid
+  reviewedByAdminUserId String? @map("reviewed_by_admin_user_id") @db.Uuid
+
+  status  AdvertisementRevisionStatus @default(PENDING_REVIEW)
+  version Int                         @default(1)
+
+  title            String  @db.VarChar(90)
+  category         String  @db.VarChar(80)
+  shortDescription String  @map("short_description") @db.VarChar(180)
+  description      String  @db.VarChar(1600)
+  serviceDetails   String? @map("service_details") @db.VarChar(1600)
+  contactLabel     String? @map("contact_label") @db.VarChar(80)
+  contactUrl       String? @map("contact_url") @db.VarChar(1000)
+
+  denialReason String?   @map("denial_reason") @db.VarChar(1000)
+  reviewedAt   DateTime? @map("reviewed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  advertisement Advertisement        @relation(fields: [advertisementId], references: [id], onDelete: Cascade)
+  submittedBy   User                 @relation("AdvertisementRevisionSubmitter", fields: [submittedByUserId], references: [id], onDelete: Cascade)
+  reviewedBy    AdminUser?           @relation("AdvertisementRevisionReviewer", fields: [reviewedByAdminUserId], references: [id], onDelete: SetNull)
+  media         AdvertisementMedia[]
+
+  @@index([advertisementId, status])
+  @@index([status, createdAt])
+  @@index([submittedByUserId, createdAt])
+  @@map("advertisement_revisions")
+}
+
+model AdvertisementMedia {
+  id               String                 @id @default(uuid()) @db.Uuid
+  revisionId       String                 @map("revision_id") @db.Uuid
+  mediaType        AdvertisementMediaType @map("media_type")
+  url              String                 @db.VarChar(1000)
+  thumbnailUrl     String?                @map("thumbnail_url") @db.VarChar(1000)
+  storageKey       String?                @map("storage_key") @db.VarChar(1000)
+  originalFileName String?                @map("original_file_name") @db.VarChar(255)
+  mimeType         String?                @map("mime_type") @db.VarChar(120)
+  sizeBytes        Int?                   @map("size_bytes")
+  durationSeconds  Int?                   @map("duration_seconds")
+  sortOrder        Int                    @default(0) @map("sort_order")
+  isCover          Boolean                @default(false) @map("is_cover")
+  createdAt        DateTime               @default(now()) @map("created_at")
+
+  revision AdvertisementRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+
+  @@index([revisionId, sortOrder])
+  @@map("advertisement_media")
+}
+
+model AdvertisementJob {
+  id               String @id @default(uuid()) @db.Uuid
+  advertisementId  String @map("advertisement_id") @db.Uuid
+  conversationId   String @map("conversation_id") @db.Uuid
+  advertiserUserId String @map("advertiser_user_id") @db.Uuid
+  customerUserId   String @map("customer_user_id") @db.Uuid
+  requestSequence  Int    @default(1) @map("request_sequence")
+
+  status         AdvertisementJobStatus @default(INQUIRY_OPEN)
+  inquiryMessage String?                @map("inquiry_message") @db.VarChar(1000)
+
+  acceptedAt                   DateTime? @map("accepted_at")
+  declinedAt                   DateTime? @map("declined_at")
+  advertiserMarkedCompleteAt   DateTime? @map("advertiser_marked_complete_at")
+  customerApprovedAt           DateTime? @map("customer_approved_at")
+  customerDeclinedCompletionAt DateTime? @map("customer_declined_completion_at")
+  completionDeclineReason      String?   @map("completion_decline_reason") @db.VarChar(1000)
+  completedAt                  DateTime? @map("completed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  advertisement Advertisement        @relation(fields: [advertisementId], references: [id], onDelete: Cascade)
+  conversation  Conversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  advertiser    User                 @relation("AdvertisementJobAdvertiser", fields: [advertiserUserId], references: [id], onDelete: Cascade)
+  customer      User                 @relation("AdvertisementJobCustomer", fields: [customerUserId], references: [id], onDelete: Cascade)
+  review        AdvertisementReview?
+
+  @@unique([advertisementId, conversationId, customerUserId, requestSequence])
+  @@index([advertisementId, status, updatedAt])
+  @@index([advertiserUserId, status, updatedAt])
+  @@index([customerUserId, status, updatedAt])
+  @@index([conversationId])
+  @@map("advertisement_jobs")
+}
+
+model AdvertisementReview {
+  id               String   @id @default(uuid()) @db.Uuid
+  jobId            String   @unique @map("job_id") @db.Uuid
+  advertisementId  String   @map("advertisement_id") @db.Uuid
+  advertiserUserId String   @map("advertiser_user_id") @db.Uuid
+  reviewerUserId   String   @map("reviewer_user_id") @db.Uuid
+  stars            Int
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  job           AdvertisementJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  advertisement Advertisement    @relation(fields: [advertisementId], references: [id], onDelete: Cascade)
+  advertiser    User             @relation("AdvertisementReviewAdvertiser", fields: [advertiserUserId], references: [id], onDelete: Cascade)
+  reviewer      User             @relation("AdvertisementReviewReviewer", fields: [reviewerUserId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, reviewerUserId])
+  @@index([advertisementId, createdAt])
+  @@index([advertiserUserId, createdAt])
+  @@index([reviewerUserId, createdAt])
+  @@map("advertisement_reviews")
+}
+
+model AdvertisementBillingEvent {
+  id              String @id @default(uuid()) @db.Uuid
+  advertisementId String @map("advertisement_id") @db.Uuid
+  userId          String @map("user_id") @db.Uuid
+
+  eventType       AdvertisementBillingEventType   @map("event_type")
+  status          AdvertisementBillingEventStatus
+  paymentCurrency AdvertisementPaymentCurrency    @map("payment_currency")
+
+  diamondAmount         Int       @default(0) @map("diamond_amount")
+  coinAmount            Int       @default(0) @map("coin_amount")
+  walletLedgerId        String?   @map("wallet_ledger_id") @db.Uuid
+  failureReason         String?   @map("failure_reason") @db.VarChar(1000)
+  billingCycleStartedAt DateTime? @map("billing_cycle_started_at")
+  billingCycleEndsAt    DateTime? @map("billing_cycle_ends_at")
+  metadataJson          Json?     @map("metadata_json")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  advertisement Advertisement @relation(fields: [advertisementId], references: [id], onDelete: Cascade)
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  walletLedger  WalletLedger? @relation(fields: [walletLedgerId], references: [id], onDelete: SetNull)
+
+  @@index([advertisementId, createdAt])
+  @@index([userId, createdAt])
+  @@index([walletLedgerId])
+  @@map("advertisement_billing_events")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @map("token_hash")
+  revokedAt DateTime? @map("revoked_at")
+  expiresAt DateTime  @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model StreamSchedule {
+  id          String  @id @default(uuid()) @db.Uuid
+  userId      String  @map("user_id") @db.Uuid
+  isRecurring Boolean @map("is_recurring")
+  title       String
+  description String?
+  timezone    String
+
+  dayOfWeek Int?    @map("day_of_week")
+  time24h   String? @map("time_24h")
+
+  startAt DateTime? @map("start_at")
+  endAt   DateTime? @map("end_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRecurring])
+  @@index([startAt])
+  @@map("stream_schedules")
+}
+
+model DiamondMilestone {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  milestoneAmount Int      @map("milestone_amount")
+  achievedAt      DateTime @map("achieved_at")
+
+  giverUserId String? @map("giver_user_id") @db.Uuid
+  giftId      String? @map("gift_id")
+  giftTxId    String? @map("gift_tx_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User             @relation("MilestoneOwner", fields: [userId], references: [id], onDelete: Cascade)
+  giver  User?            @relation("MilestoneGiver", fields: [giverUserId], references: [id], onDelete: SetNull)
+  giftTx GiftTransaction? @relation(fields: [giftTxId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([milestoneAmount])
+  @@index([achievedAt])
+  @@map("diamond_milestones")
+}
+
+model Stream {
+  id         String           @id @default(uuid()) @db.Uuid
+  hostUserId String           @map("host_user_id") @db.Uuid
+  title      String
+  color      String?
+  status     StreamStatus
+  visibility StreamVisibility
+  tagsJson   Json             @default("[]") @map("tags_json")
+  startedAt  DateTime         @default(now()) @map("started_at")
+  endedAt    DateTime?        @map("ended_at")
+
+  endedByAdminUserId String? @map("ended_by_admin_user_id") @db.Uuid
+  endReason          String? @map("end_reason") @db.VarChar(300)
+
+  videoProvider String? @map("video_provider")
+  videoRoomName String? @map("video_room_name")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  host         User                @relation("StreamHost", fields: [hostUserId], references: [id], onDelete: Cascade)
+  participants StreamParticipant[]
+  chatMessages ChatMessage[]
+
+  userRoles            StreamUserRole[]
+  staffAssignments     StreamStaffAssignment[]
+  staffRolePermissions StreamStaffRolePermission[]
+  restrictions         StreamUserRestriction[]
+  modActions           ModerationAction[]
+  reports              Report[]                    @relation("ReportTargetStream")
+
+  giftTransactions GiftTransaction[]
+  walletLedger     WalletLedger[]
+
+  battles Battle[]
+
+  layoutGridSize Int     @default(1)
+  isAudioOnly    Boolean @default(false) @map("is_audio_only")
+  streamGoal     Int     @default(0) @map("stream_goal")
+  pinnedMessage  String? @map("pinned_message")
+  guests         Json    @default("[]")
+
+  guestRequests StreamGuestRequest[]
+
+  @@index([hostUserId])
+  @@index([status])
+  @@index([startedAt])
+  @@index([endedByAdminUserId])
+  @@map("streams")
+}
+
+model StreamParticipant {
+  id        String     @id @default(uuid()) @db.Uuid
+  streamId  String     @map("stream_id") @db.Uuid
+  userId    String     @map("user_id") @db.Uuid
+  role      StreamRole
+  joinedAt  DateTime   @default(now()) @map("joined_at")
+  leftAt    DateTime?  @map("left_at")
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  stream     Stream   @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastPingAt DateTime @default(now())
+
+  @@index([streamId, userId, leftAt])
+  @@index([streamId])
+  @@index([userId])
+  @@index([leftAt])
+  @@map("stream_participants")
+}
+
+model ChatMessage {
+  id                   String    @id @default(uuid()) @db.Uuid
+  streamId             String    @map("stream_id") @db.Uuid
+  userId               String    @map("user_id") @db.Uuid
+  text                 String    @db.VarChar(500)
+  replyToMessageId     String?   @map("reply_to_message_id") @db.Uuid
+  badgesJson           Json?     @map("badges_json")
+  isDeleted            Boolean   @default(false) @map("is_deleted")
+  deletedAt            DateTime? @map("deleted_at")
+  deletedByAdminUserId String?   @map("deleted_by_admin_user_id") @db.Uuid
+  deletionLabel        String?   @map("deletion_label") @db.VarChar(120)
+  createdAt            DateTime  @default(now()) @map("created_at")
+
+  stream  Stream   @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reports Report[] @relation("ReportTargetChatMessage")
+
+  @@index([streamId, createdAt])
+  @@index([userId])
+  @@index([isDeleted])
+  @@map("chat_messages")
+}
+
+model StreamUserRole {
+  id       String     @id @default(uuid()) @db.Uuid
+  streamId String     @map("stream_id") @db.Uuid
+  userId   String     @map("user_id") @db.Uuid
+  role     StreamRole
+
+  assignedByUserId String? @map("assigned_by_user_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  stream     Stream @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedBy User?  @relation("StreamRoleAssignedBy", fields: [assignedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([streamId, userId])
+  @@index([streamId])
+  @@index([userId])
+  @@map("stream_user_roles")
+}
+
+model StreamStaffAssignment {
+  id       String          @id @default(uuid()) @db.Uuid
+  streamId String          @map("stream_id") @db.Uuid
+  userId   String          @map("user_id") @db.Uuid
+  role     StreamStaffRole
+
+  assignedByUserId String? @map("assigned_by_user_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  stream     Stream @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  user       User   @relation("StreamStaffAssignmentUser", fields: [userId], references: [id], onDelete: Cascade)
+  assignedBy User?  @relation("StreamStaffAssignmentAssignedBy", fields: [assignedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([streamId, userId])
+  @@index([streamId])
+  @@index([userId])
+  @@index([role])
+  @@map("stream_staff_assignments")
+}
+
+model StreamStaffRolePermission {
+  id         String              @id @default(uuid()) @db.Uuid
+  streamId   String              @map("stream_id") @db.Uuid
+  role       StreamStaffRole
+  permission StreamPermissionKey
+  enabled    Boolean             @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  stream Stream @relation(fields: [streamId], references: [id], onDelete: Cascade)
+
+  @@unique([streamId, role, permission])
+  @@index([streamId])
+  @@index([streamId, role])
+  @@map("stream_staff_role_permissions")
+}
+
+model StreamUserRestriction {
+  id        String          @id @default(uuid()) @db.Uuid
+  streamId  String          @map("stream_id") @db.Uuid
+  userId    String          @map("user_id") @db.Uuid
+  kind      RestrictionKind
+  reason    String?         @db.VarChar(300)
+  expiresAt DateTime?       @map("expires_at")
+
+  createdByUserId      String? @map("created_by_user_id") @db.Uuid
+  createdByAdminUserId String? @map("created_by_admin_user_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  stream             Stream     @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  user               User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdBy          User?      @relation("RestrictionCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdByAdminUser AdminUser? @relation("AdminRestrictionCreatedBy", fields: [createdByAdminUserId], references: [id], onDelete: SetNull)
+
+  @@unique([streamId, userId, kind])
+  @@index([streamId])
+  @@index([userId])
+  @@index([kind])
+  @@index([expiresAt])
+  @@index([createdByAdminUserId])
+  @@map("stream_user_restrictions")
+}
+
+model ModerationAction {
+  id       String               @id @default(uuid()) @db.Uuid
+  streamId String?              @map("stream_id") @db.Uuid
+  action   ModerationActionType
+
+  targetUserId     String  @map("target_user_id") @db.Uuid
+  actorUserId      String? @map("actor_user_id") @db.Uuid
+  actorAdminUserId String? @map("actor_admin_user_id") @db.Uuid
+
+  reason          String?   @db.VarChar(300)
+  durationSeconds Int?      @map("duration_seconds")
+  expiresAt       DateTime? @map("expires_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  stream         Stream?    @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  target         User       @relation("ModerationTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+  actor          User?      @relation("ModerationActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorAdminUser AdminUser? @relation("AdminModerationActor", fields: [actorAdminUserId], references: [id], onDelete: SetNull)
+
+  banAppeals BanAppeal[] @relation("BanAppealModerationAction")
+
+  @@index([streamId])
+  @@index([targetUserId])
+  @@index([actorUserId])
+  @@index([actorAdminUserId])
+  @@index([createdAt])
+  @@map("moderation_actions")
+}
+
+model Gift {
+  id           String        @id
+  name         String
+  diamondValue Int           @map("diamond_value")
+  coinCost     Int           @map("coin_cost")
+  mediaUrl     String        @map("media_url")
+  mediaType    GiftMediaType @map("media_type")
+  isBigGift    Boolean       @default(false) @map("is_big_gift")
+  isEnabled   Boolean       @default(true) @map("is_enabled")
+  effectSize  String        @default("MEDIUM") @map("effect_size")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  giftTransactions GiftTransaction[]
+
+  usersRequiringAsDmUnlock User[] @relation("UserDmUnlockGift")
+
+  @@index([coinCost])
+  @@index([diamondValue])
+  @@map("gifts")
+}
+
+model Wallet {
+  userId         String   @id @map("user_id") @db.Uuid
+  coins          Int      @default(0)
+  diamondsEarned Int      @default(0) @map("diamonds_earned")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("wallets")
+}
+
+model WalletLedger {
+  id            String          @id @default(uuid()) @db.Uuid
+  userId        String          @map("user_id") @db.Uuid
+  type          LedgerEntryType @map("entry_type")
+  deltaCoins    Int             @map("delta_coins")
+  deltaDiamonds Int             @map("delta_diamonds")
+
+  streamId String? @map("stream_id") @db.Uuid
+  giftTxId String? @map("gift_tx_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user                       User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stream                     Stream?                     @relation(fields: [streamId], references: [id], onDelete: SetNull)
+  giftTx                     GiftTransaction?            @relation(fields: [giftTxId], references: [id], onDelete: SetNull)
+  advertisementBillingEvents AdvertisementBillingEvent[]
+
+  @@index([userId, createdAt])
+  @@index([streamId])
+  @@index([giftTxId])
+  @@map("wallet_ledger")
+}
+
+model CoinLot {
+  id      String  @id @default(uuid()) @db.Uuid
+  userId  String  @map("user_id") @db.Uuid
+  orderId String? @map("order_id") @db.Uuid
+
+  sourceType CoinLotSourceType @default(PURCHASE) @map("source_type")
+  provider   PurchaseProvider
+
+  coinsPurchased Int @map("coins_purchased")
+  coinsRemaining Int @map("coins_remaining")
+
+  priceCents Int?   @map("price_cents")
+  currency   String @default("USD")
+
+  providerPaymentIntentId      String?   @map("provider_payment_intent_id")
+  providerChargeId             String?   @map("provider_charge_id")
+  providerBalanceTransactionId String?   @map("provider_balance_transaction_id")
+  providerAvailableOn          DateTime? @map("provider_available_on")
+
+  status CoinLotStatus @default(PENDING)
+
+  metadataJson Json? @map("metadata_json")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order PurchaseOrder? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  giftSources GiftCoinSource[]
+
+  @@unique([orderId])
+  @@index([userId, status])
+  @@index([userId, status, createdAt])
+  @@index([userId, status, createdAt, id])
+  @@index([orderId])
+  @@index([provider, providerPaymentIntentId])
+  @@index([provider, providerChargeId])
+  @@index([providerBalanceTransactionId])
+  @@index([providerAvailableOn])
+  @@map("coin_lots")
+}
+
+model GiftCoinSource {
+  id        String @id @default(uuid()) @db.Uuid
+  giftTxId  String @map("gift_tx_id") @db.Uuid
+  coinLotId String @map("coin_lot_id") @db.Uuid
+
+  coinsUsed Int @map("coins_used")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  giftTx  GiftTransaction @relation(fields: [giftTxId], references: [id], onDelete: Cascade)
+  coinLot CoinLot         @relation(fields: [coinLotId], references: [id], onDelete: Restrict)
+
+  earnings StreamerEarning[]
+
+  @@unique([giftTxId, coinLotId])
+  @@index([giftTxId])
+  @@index([coinLotId])
+  @@map("gift_coin_sources")
+}
+
+model StreamerEarning {
+  id               String @id @default(uuid()) @db.Uuid
+  streamerUserId   String @map("streamer_user_id") @db.Uuid
+  giftTxId         String @map("gift_tx_id") @db.Uuid
+  giftCoinSourceId String @map("gift_coin_source_id") @db.Uuid
+
+  diamondsEarned  Int @map("diamonds_earned")
+  coinsSourceUsed Int @map("coins_source_used")
+
+  grossAmountCents    Int @map("gross_amount_cents")
+  platformFeeCents    Int @default(0) @map("platform_fee_cents")
+  streamerAmountCents Int @map("streamer_amount_cents")
+
+  providerAvailableOn DateTime? @map("provider_available_on")
+  holdUntil           DateTime  @map("hold_until")
+  availableAt         DateTime  @map("available_at")
+
+  status StreamerEarningStatus @default(PENDING)
+
+  payoutRequestId String? @map("payout_request_id") @db.Uuid
+
+  reversalReason String?   @map("reversal_reason") @db.VarChar(300)
+  reversedAt     DateTime? @map("reversed_at")
+
+  metadataJson Json? @map("metadata_json")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  streamer       User            @relation("StreamerEarnings", fields: [streamerUserId], references: [id], onDelete: Cascade)
+  giftTx         GiftTransaction @relation(fields: [giftTxId], references: [id], onDelete: Cascade)
+  giftCoinSource GiftCoinSource  @relation(fields: [giftCoinSourceId], references: [id], onDelete: Restrict)
+  payoutRequest  PayoutRequest?  @relation(fields: [payoutRequestId], references: [id], onDelete: SetNull)
+
+  @@index([streamerUserId, status, availableAt])
+  @@index([streamerUserId, status])
+  @@index([giftTxId])
+  @@index([giftCoinSourceId])
+  @@index([payoutRequestId])
+  @@index([availableAt])
+  @@map("streamer_earnings")
+}
+
+model PayoutMethod {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+
+  type   PayoutMethodType
+  status PayoutMethodStatus @default(PENDING)
+
+  label     String? @db.VarChar(120)
+  isDefault Boolean @default(false) @map("is_default")
+
+  paypalEmail String? @map("paypal_email") @db.VarChar(255)
+
+  stripeConnectedAccountId String? @map("stripe_connected_account_id")
+  stripeExternalAccountId  String? @map("stripe_external_account_id")
+
+  metadataJson Json? @map("metadata_json")
+
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  disabledAt DateTime? @map("disabled_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  payoutRequests PayoutRequest[]
+
+  @@index([userId, status])
+  @@index([userId, type, status])
+  @@index([paypalEmail])
+  @@map("payout_methods")
+}
+
+model GiftTransaction {
+  id       String  @id @default(uuid()) @db.Uuid
+  streamId String? @map("stream_id") @db.Uuid
+  giftId   String  @map("gift_id")
+
+  senderUserId    String @map("sender_user_id") @db.Uuid
+  recipientUserId String @map("recipient_user_id") @db.Uuid
+
+  idempotencyKey String? @map("idempotency_key") @db.VarChar(120)
+
+  coinCost     Int @map("coin_cost")
+  diamondValue Int @map("diamond_value")
+
+  coinSources      GiftCoinSource[]
+  streamerEarnings StreamerEarning[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  stream    Stream? @relation(fields: [streamId], references: [id], onDelete: SetNull)
+  gift      Gift    @relation(fields: [giftId], references: [id], onDelete: Restrict)
+  sender    User    @relation("GiftSender", fields: [senderUserId], references: [id], onDelete: Cascade)
+  recipient User    @relation("GiftRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+
+  ledgers    WalletLedger[]
+  milestones DiamondMilestone[]
+
+  battleContribution BattleContribution?
+  directMessage      DirectMessage?
+
+  @@unique([senderUserId, idempotencyKey])
+  @@index([streamId, createdAt])
+  @@index([senderUserId, createdAt])
+  @@index([recipientUserId, createdAt])
+  @@map("gift_transactions")
+}
+
+model Battle {
+  id       String @id @default(uuid()) @db.Uuid
+  streamId String @map("stream_id") @db.Uuid
+
+  hostUserId     String  @map("host_user_id") @db.Uuid
+  opponentUserId String  @map("opponent_user_id") @db.Uuid
+  winnerUserId   String? @map("winner_user_id") @db.Uuid
+
+  status          BattleStatus
+  durationSeconds Int          @map("duration_seconds")
+
+  hostScore     Int @default(0) @map("host_score")
+  opponentScore Int @default(0) @map("opponent_score")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  startedAt DateTime? @map("started_at")
+  endsAt    DateTime? @map("ends_at")
+  endedAt   DateTime? @map("ended_at")
+
+  stream   Stream @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  host     User   @relation("BattleHost", fields: [hostUserId], references: [id], onDelete: Cascade)
+  opponent User   @relation("BattleOpponent", fields: [opponentUserId], references: [id], onDelete: Cascade)
+  winner   User?  @relation("BattleWinner", fields: [winnerUserId], references: [id], onDelete: SetNull)
+
+  contributions BattleContribution[]
+
+  @@index([streamId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("battles")
+}
+
+model BattleContribution {
+  id       String @id @default(uuid()) @db.Uuid
+  battleId String @map("battle_id") @db.Uuid
+  giftTxId String @unique @map("gift_tx_id") @db.Uuid
+
+  senderUserId    String @map("sender_user_id") @db.Uuid
+  recipientUserId String @map("recipient_user_id") @db.Uuid
+  diamondValue    Int    @map("diamond_value")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  battle    Battle          @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  giftTx    GiftTransaction @relation(fields: [giftTxId], references: [id], onDelete: Cascade)
+  sender    User            @relation("BattleContributionSender", fields: [senderUserId], references: [id], onDelete: Cascade)
+  recipient User            @relation("BattleContributionRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+
+  @@index([battleId])
+  @@index([createdAt])
+  @@map("battle_contributions")
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  userId      String           @db.Uuid
+  type        NotificationType
+  title       String?
+  body        String?
+  payloadJson Json             @default("{}")
+  createdAt   DateTime         @default(now())
+  readAt      DateTime?
+  streamId    String?
+  dedupeKey   String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+  @@index([streamId])
+}
+
+model PushDeviceToken {
+  id               String       @id @default(uuid()) @db.Uuid
+  userId           String       @map("user_id") @db.Uuid
+  expoPushToken    String       @unique @map("expo_push_token")
+  platform         PushPlatform @default(UNKNOWN)
+  deviceId         String?      @map("device_id")
+  isActive         Boolean      @default(true) @map("is_active")
+  lastRegisteredAt DateTime     @default(now()) @map("last_registered_at")
+  lastSentAt       DateTime?    @map("last_sent_at")
+  lastError        String?      @map("last_error")
+  disabledAt       DateTime?    @map("disabled_at")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive])
+  @@index([userId, platform])
+  @@map("push_device_tokens")
+}
+
+model CoinPackage {
+  id              String    @id
+  coins           Int
+  priceCents      Int       @map("price_cents")
+  currency        String    @default("USD")
+  appleProductId  String?   @map("apple_product_id")
+  googleProductId String?   @map("google_product_id")
+  isActive        Boolean   @default(true) @map("is_active")
+  forDevUse       Boolean   @default(false) @map("for_dev_use")
+  badgeText       String?   @map("badge_text")
+  colorPreset     String?   @map("color_preset")
+  isFeatured      Boolean   @default(false) @map("is_featured")
+  sortOrder       Int       @default(0) @map("sort_order")
+  deletedAt       DateTime? @map("deleted_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  orders PurchaseOrder[]
+
+  @@index([isActive, sortOrder])
+  @@index([forDevUse, isActive, sortOrder])
+  @@index([deletedAt])
+  @@index([appleProductId])
+  @@index([googleProductId])
+  @@map("coin_packages")
+}
+
+model StreamGuestRequest {
+  id        String   @id @default(cuid())
+  streamId  String   @map("stream_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  status    String   @default("PENDING")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  stream Stream @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([streamId, status, createdAt])
+  @@map("stream_guest_requests")
+}
+
+model PurchaseOrder {
+  id        String @id @default(uuid()) @db.Uuid
+  userId    String @map("user_id") @db.Uuid
+  packageId String @map("package_id")
+
+  provider PurchaseProvider
+  status   PurchaseStatus
+
+  coinLots CoinLot[]
+
+  idempotencyKey String? @map("idempotency_key")
+  providerRef    String? @map("provider_ref")
+
+  coins      Int
+  priceCents Int    @map("price_cents")
+  currency   String @default("USD")
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  paidAt      DateTime? @map("paid_at")
+  fulfilledAt DateTime? @map("fulfilled_at")
+
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pkg  CoinPackage @relation(fields: [packageId], references: [id], onDelete: Restrict)
+
+  @@unique([provider, providerRef])
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([provider, providerRef])
+  @@map("purchase_orders")
+}
+
+model UserVipMonth {
+  userId                  String       @map("user_id") @db.Uuid
+  periodKey               String       @map("period_key") @db.VarChar(7)
+  spendCents              Int          @default(0) @map("spend_cents")
+  highestColorBadge       VipBadgeKey? @map("highest_color_badge")
+  highestColorReachedAt   DateTime?    @map("highest_color_reached_at")
+  finalizedBadgeKey       VipBadgeKey? @map("finalized_badge_key")
+  finalizedPercentileBand Int?         @map("finalized_percentile_band")
+  leaderboardRank         Int?         @map("leaderboard_rank")
+  spenderCount            Int?         @map("spender_count")
+  isFinalized             Boolean      @default(false) @map("is_finalized")
+  finalizedAt             DateTime?    @map("finalized_at")
+  createdAt               DateTime     @default(now()) @map("created_at")
+  updatedAt               DateTime     @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, periodKey])
+  @@index([periodKey, spendCents])
+  @@index([periodKey, highestColorBadge])
+  @@index([periodKey, finalizedBadgeKey])
+  @@index([periodKey, isFinalized])
+  @@map("user_vip_months")
+}
+
+model Badge {
+  id                   String      @id @default(uuid()) @db.Uuid
+  name                 String      @db.VarChar(120)
+  slug                 String      @unique @db.VarChar(140)
+  description          String?     @db.VarChar(1000)
+  assetUrl             String?     @map("asset_url") @db.VarChar(1000)
+  assetMimeType        String?     @map("asset_mime_type") @db.VarChar(255)
+  assetOriginalName    String?     @map("asset_original_name") @db.VarChar(255)
+  assetSize            Int?        @map("asset_size")
+  status               BadgeStatus @default(DRAFT)
+  sortOrder            Int         @default(0) @map("sort_order")
+  characteristicsJson  Json?       @map("characteristics_json")
+  metadataJson         Json?       @map("metadata_json")
+  createdByAdminUserId String?     @map("created_by_admin_user_id") @db.Uuid
+  updatedByAdminUserId String?     @map("updated_by_admin_user_id") @db.Uuid
+  deletedAt            DateTime?   @map("deleted_at")
+  createdAt            DateTime    @default(now()) @map("created_at")
+  updatedAt            DateTime    @updatedAt @map("updated_at")
+
+  assignments UserBadge[]
+
+  @@index([status, sortOrder])
+  @@index([deletedAt])
+  @@map("badges")
+}
+
+model UserBadge {
+  id                    String    @id @default(uuid()) @db.Uuid
+  userId                String    @map("user_id") @db.Uuid
+  badgeId               String    @map("badge_id") @db.Uuid
+  assignedByAdminUserId String?   @map("assigned_by_admin_user_id") @db.Uuid
+  revokedByAdminUserId  String?   @map("revoked_by_admin_user_id") @db.Uuid
+  startsAt              DateTime  @default(now()) @map("starts_at")
+  expiresAt             DateTime? @map("expires_at")
+  revokedAt             DateTime? @map("revoked_at")
+  revokedReason         String?   @map("revoked_reason") @db.VarChar(500)
+  note                  String?   @db.VarChar(500)
+  metadataJson          Json?     @map("metadata_json")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge Badge @relation(fields: [badgeId], references: [id], onDelete: Restrict)
+
+  @@index([userId, startsAt])
+  @@index([badgeId])
+  @@index([revokedAt])
+  @@index([expiresAt])
+  @@map("user_badges")
+}
+
+
+model UserBlock {
+  blockerId String   @map("blocker_id") @db.Uuid
+  blockedId String   @map("blocked_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  blocker User @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@id([blockerId, blockedId])
+  @@map("user_blocks")
+}
+
+model Conversation {
+  id               String                 @id @default(uuid()) @db.Uuid
+  participant1Id   String                 @map("participant_1_id") @db.Uuid
+  participant2Id   String                 @map("participant_2_id") @db.Uuid
+  interactionCount Int                    @default(0) @map("interaction_count")
+  threadType       ConversationThreadType @default(NORMAL) @map("thread_type")
+  threadKey        String                 @default("normal") @map("thread_key") @db.VarChar(120)
+  createdAt        DateTime               @default(now()) @map("created_at")
+  updatedAt        DateTime               @updatedAt @map("updated_at")
+
+  requestStatus          ConversationRequestStatus @default(NONE) @map("request_status")
+  requestOrigin          ConversationRequestOrigin @default(NORMAL) @map("request_origin")
+  requestAdvertisementId String?                   @map("request_advertisement_id") @db.Uuid
+  requestSenderId        String?                   @map("request_sender_id") @db.Uuid
+  requestRecipientId     String?                   @map("request_recipient_id") @db.Uuid
+  requestPreviewText     String?                   @map("request_preview_text") @db.VarChar(280)
+  requestCreatedAt       DateTime?                 @map("request_created_at")
+  requestRespondedAt     DateTime?                 @map("request_responded_at")
+
+  participant1 User @relation("ConversationParticipant1", fields: [participant1Id], references: [id], onDelete: Cascade)
+  participant2 User @relation("ConversationParticipant2", fields: [participant2Id], references: [id], onDelete: Cascade)
+
+  deletedByP1 Boolean @default(false) @map("deleted_by_p1")
+  deletedByP2 Boolean @default(false) @map("deleted_by_p2")
+
+  messages          DirectMessage[]
+  advertisementJobs AdvertisementJob[]
+
+  @@unique([participant1Id, participant2Id, threadType, threadKey])
+  @@index([participant1Id, updatedAt])
+  @@index([participant2Id, updatedAt])
+  @@index([threadType, updatedAt])
+  @@index([requestRecipientId, requestStatus, updatedAt])
+  @@index([requestAdvertisementId])
+  @@map("conversations")
+}
+
+model DirectMessage {
+  id             String            @id @default(uuid()) @db.Uuid
+  conversationId String            @map("conversation_id") @db.Uuid
+  senderId       String            @map("sender_id") @db.Uuid
+  messageType    DirectMessageType @default(TEXT) @map("message_type")
+  text           String?           @db.VarChar(1000)
+  mediaUrl       String?           @map("media_url")
+  giftTxId       String?           @unique @map("gift_tx_id") @db.Uuid
+  isRead         Boolean           @default(false) @map("is_read")
+
+  origin                     DirectMessageOrigin @default(NORMAL)
+  advertisementId            String?             @map("advertisement_id") @db.Uuid
+  hiddenUntilRequestAccepted Boolean             @default(false) @map("hidden_until_request_accepted")
+
+  deletedBySender    Boolean @default(false) @map("deleted_by_sender")
+  deletedByRecipient Boolean @default(false) @map("deleted_by_recipient")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  conversation Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User             @relation("DirectMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  giftTx       GiftTransaction? @relation(fields: [giftTxId], references: [id], onDelete: SetNull)
+  reports      Report[]         @relation("ReportTargetDmMessage")
+
+  @@index([conversationId, createdAt])
+  @@index([senderId])
+  @@index([advertisementId])
+  @@map("direct_messages")
+}
+
+model AppConfig {
+  key       String   @id
+  valueJson Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("app_config")
+}
+
+model AssetSubmission {
+  id           String                @id @default(cuid())
+  userId       String                @db.Uuid
+  type         AssetSubmissionType
+  status       AssetSubmissionStatus @default(PENDING)
+  originalUrl  String
+  approvedUrl  String?
+  adminNotes   String?
+  reviewedById String?               @db.Uuid
+  reviewedAt   DateTime?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  user       User  @relation("AssetSubmissionUser", fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy User? @relation("AssetSubmissionReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([status, createdAt])
+  @@map("asset_submissions")
+}
+
+model Report {
+  id                  String           @id @default(uuid()) @db.Uuid
+  reporterUserId      String           @map("reporter_user_id") @db.Uuid
+  targetType          ReportTargetType @map("target_type")
+  targetUserId        String?          @map("target_user_id") @db.Uuid
+  targetStreamId      String?          @map("target_stream_id") @db.Uuid
+  targetChatMessageId String?          @map("target_chat_message_id") @db.Uuid
+  targetDmMessageId   String?          @map("target_dm_message_id") @db.Uuid
+  reasonCode          ReportReasonCode @map("reason_code")
+  description         String?          @db.VarChar(2000)
+  status              ReportStatus     @default(OPEN)
+  assignedAdminUserId String?          @map("assigned_admin_user_id") @db.Uuid
+  resolutionNotes     String?          @map("resolution_notes") @db.VarChar(2000)
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedAt           DateTime         @updatedAt @map("updated_at")
+  resolvedAt          DateTime?        @map("resolved_at")
+
+  reporter          User             @relation("ReportReporter", fields: [reporterUserId], references: [id], onDelete: Cascade)
+  targetUser        User?            @relation("ReportTargetUser", fields: [targetUserId], references: [id], onDelete: SetNull)
+  targetStream      Stream?          @relation("ReportTargetStream", fields: [targetStreamId], references: [id], onDelete: SetNull)
+  targetChatMessage ChatMessage?     @relation("ReportTargetChatMessage", fields: [targetChatMessageId], references: [id], onDelete: SetNull)
+  targetDmMessage   DirectMessage?   @relation("ReportTargetDmMessage", fields: [targetDmMessageId], references: [id], onDelete: SetNull)
+  assignedAdminUser AdminUser?       @relation("ReportAssignedAdmin", fields: [assignedAdminUserId], references: [id], onDelete: SetNull)
+  auditLogs         ReportAuditLog[]
+
+  @@index([reporterUserId, createdAt])
+  @@index([targetType, status, createdAt])
+  @@index([targetUserId, createdAt])
+  @@index([targetStreamId, createdAt])
+  @@index([targetChatMessageId, createdAt])
+  @@index([targetDmMessageId, createdAt])
+  @@index([status, createdAt])
+  @@index([assignedAdminUserId, status])
+  @@map("reports")
+}
+
+model ReportAuditLog {
+  id               String            @id @default(uuid()) @db.Uuid
+  reportId         String            @map("report_id") @db.Uuid
+  actorAdminUserId String            @map("actor_admin_user_id") @db.Uuid
+  action           ReportAuditAction
+  note             String?           @db.VarChar(2000)
+  createdAt        DateTime          @default(now()) @map("created_at")
+
+  report         Report    @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  actorAdminUser AdminUser @relation("ReportAuditActor", fields: [actorAdminUserId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, createdAt])
+  @@index([actorAdminUserId, createdAt])
+  @@map("report_audit_logs")
+}
+
+model BanAppeal {
+  id                            String  @id @default(uuid()) @db.Uuid
+  userId                        String  @map("user_id") @db.Uuid
+  platformBanModerationActionId String? @map("platform_ban_moderation_action_id") @db.Uuid
+
+  banIssuedAtSnapshot  DateTime? @map("ban_issued_at_snapshot")
+  banExpiresAtSnapshot DateTime? @map("ban_expires_at_snapshot")
+  banReasonSnapshot    String?   @map("ban_reason_snapshot") @db.VarChar(300)
+
+  appealMessage String  @map("appeal_message") @db.VarChar(4000)
+  contactNote   String? @map("contact_note") @db.VarChar(500)
+
+  status        BanAppealStatus @default(PENDING)
+  adminNotes    String?         @map("admin_notes") @db.VarChar(2000)
+  decisionNotes String?         @map("decision_notes") @db.VarChar(2000)
+
+  reviewedByAdminUserId String?   @map("reviewed_by_admin_user_id") @db.Uuid
+  reviewedAt            DateTime? @map("reviewed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user                        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewedByAdminUser         AdminUser?        @relation("BanAppealReviewer", fields: [reviewedByAdminUserId], references: [id], onDelete: SetNull)
+  platformBanModerationAction ModerationAction? @relation("BanAppealModerationAction", fields: [platformBanModerationActionId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([platformBanModerationActionId])
+  @@index([reviewedByAdminUserId, reviewedAt])
+  @@map("ban_appeals")
+}
+
+model SmtpAccount {
+  id                String                 @id @default(uuid()) @db.Uuid
+  label             String                 @unique @db.VarChar(120)
+  host              String                 @db.VarChar(255)
+  port              Int
+  secure            Boolean                @default(false)
+  username          String                 @db.VarChar(255)
+  encryptedPassword String                 @map("encrypted_password")
+  fromName          String                 @map("from_name") @db.VarChar(120)
+  fromEmail         String                 @map("from_email") @db.VarChar(255)
+  replyToEmail      String?                @map("reply_to_email") @db.VarChar(255)
+  status            EmailSmtpAccountStatus @default(DISABLED)
+  priority          Int                    @default(100)
+  notes             String?                @db.VarChar(2000)
+  lastVerifiedAt    DateTime?              @map("last_verified_at")
+  lastHealthcheckAt DateTime?              @map("last_healthcheck_at")
+  lastError         String?                @map("last_error") @db.VarChar(2000)
+  createdAt         DateTime               @default(now()) @map("created_at")
+  updatedAt         DateTime               @updatedAt @map("updated_at")
+
+  categoryMappings EmailCategoryMapping[]
+  deliveryLogs     EmailDeliveryLog[]
+
+  @@index([status, priority])
+  @@index([fromEmail])
+  @@map("smtp_accounts")
+}
+
+model ApiRequestMetricBucket {
+  id               String    @id @default(cuid())
+  bucketStart      DateTime
+  routeKey         String
+  routeCategory    String
+  method           String
+  routePattern     String
+  requestCount     Int       @default(0)
+  successCount     Int       @default(0)
+  clientErrorCount Int       @default(0)
+  serverErrorCount Int       @default(0)
+  totalDurationMs  Int       @default(0)
+  lastStatusCode   Int?
+  lastSeenAt       DateTime?
+  lastErrorAt      DateTime?
+  lastErrorMessage String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([bucketStart, routeKey])
+  @@index([bucketStart])
+  @@index([routeCategory, bucketStart])
+  @@map("api_request_metric_buckets")
+}
+
+model SystemLogEvent {
+  id                   String   @id @default(cuid())
+  source               String
+  level                String
+  category             String
+  message              String
+  detailsJson          Json?
+  requestId            String?
+  route                String?
+  method               String?
+  statusCode           Int?
+  durationMs           Int?
+  streamId             String?
+  roomName             String?
+  userId               String?
+  eventCode            String?  @map("event_code") @db.VarChar(120)
+  environment          String?  @db.VarChar(80)
+  clientPlatform       String?  @map("client_platform") @db.VarChar(40)
+  clientAppVersion     String?  @map("client_app_version") @db.VarChar(80)
+  clientBuildNumber    String?  @map("client_build_number") @db.VarChar(80)
+  clientReleaseChannel String?  @map("client_release_channel") @db.VarChar(80)
+  deviceModel          String?  @map("device_model") @db.VarChar(120)
+  deviceOsVersion      String?  @map("device_os_version") @db.VarChar(120)
+  networkType          String?  @map("network_type") @db.VarChar(60)
+  sessionId            String?  @map("session_id") @db.VarChar(120)
+  fingerprint          String?  @db.VarChar(255)
+  createdAt            DateTime @default(now())
+
+  @@index([createdAt(sort: Desc)])
+  @@index([source, createdAt(sort: Desc)])
+  @@index([source, level, createdAt(sort: Desc)])
+  @@index([eventCode, createdAt(sort: Desc)])
+  @@index([clientPlatform, createdAt(sort: Desc)])
+  @@index([fingerprint, createdAt(sort: Desc)])
+  @@map("system_log_events")
+}
+
+model EmailCategoryMapping {
+  id            String        @id @default(uuid()) @db.Uuid
+  category      EmailCategory @unique
+  smtpAccountId String?       @map("smtp_account_id") @db.Uuid
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  smtpAccount SmtpAccount? @relation(fields: [smtpAccountId], references: [id], onDelete: SetNull)
+
+  @@index([smtpAccountId])
+  @@map("email_category_mappings")
+}
+
+model EmailTemplate {
+  id                String              @id @default(uuid()) @db.Uuid
+  key               String              @unique @db.VarChar(120)
+  category          EmailCategory
+  subject           String              @db.VarChar(500)
+  htmlBody          String              @map("html_body")
+  textBody          String              @map("text_body")
+  requiredVariables Json?               @map("required_variables")
+  status            EmailTemplateStatus @default(DRAFT)
+  version           Int                 @default(1)
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+
+  @@index([category, status])
+  @@index([updatedAt])
+  @@map("email_templates")
+}
+
+model EmailTemplateDefinition {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  key                  String                  @unique @db.VarChar(120)
+  category             EmailCategory           @unique
+  name                 String                  @db.VarChar(160)
+  description          String?                 @db.VarChar(1000)
+  editorType           EmailTemplateEditorType @default(MJML) @map("editor_type")
+  allowedVariables     Json                    @map("allowed_variables")
+  requiredVariables    Json                    @map("required_variables")
+  sampleVariables      Json?                   @map("sample_variables")
+  publishedVersionId   String?                 @unique @map("published_version_id") @db.Uuid
+  createdByAdminUserId String?                 @map("created_by_admin_user_id") @db.Uuid
+  updatedByAdminUserId String?                 @map("updated_by_admin_user_id") @db.Uuid
+  archivedAt           DateTime?               @map("archived_at")
+  createdAt            DateTime                @default(now()) @map("created_at")
+  updatedAt            DateTime                @updatedAt @map("updated_at")
+
+  versions         EmailTemplateVersion[] @relation("EmailTemplateDefinitionVersions")
+  publishedVersion EmailTemplateVersion?  @relation("PublishedEmailTemplateVersion", fields: [publishedVersionId], references: [id], onDelete: SetNull)
+
+  @@index([category])
+  @@index([archivedAt])
+  @@index([updatedAt])
+  @@map("email_template_definitions")
+}
+
+model EmailTemplateVersion {
+  id                   String                     @id @default(uuid()) @db.Uuid
+  definitionId         String                     @map("definition_id") @db.Uuid
+  version              Int
+  status               EmailTemplateVersionStatus @default(DRAFT)
+  subject              String                     @db.VarChar(500)
+  markupSource         String                     @map("markup_source")
+  textBodySource       String?                    @map("text_body_source")
+  htmlBodyCompiled     String                     @map("html_body_compiled")
+  textBodyCompiled     String                     @map("text_body_compiled")
+  designJson           Json?                      @map("design_json")
+  validationErrorsJson Json?                      @map("validation_errors_json")
+  placeholders         Json?                      @map("placeholders")
+  compiledAt           DateTime?                  @map("compiled_at")
+  createdByAdminUserId String?                    @map("created_by_admin_user_id") @db.Uuid
+  updatedByAdminUserId String?                    @map("updated_by_admin_user_id") @db.Uuid
+  archivedAt           DateTime?                  @map("archived_at")
+  createdAt            DateTime                   @default(now()) @map("created_at")
+  updatedAt            DateTime                   @updatedAt @map("updated_at")
+
+  definition             EmailTemplateDefinition   @relation("EmailTemplateDefinitionVersions", fields: [definitionId], references: [id], onDelete: Cascade)
+  publishedByDefinitions EmailTemplateDefinition[] @relation("PublishedEmailTemplateVersion")
+  testLogs               EmailTemplateTestLog[]
+
+  @@unique([definitionId, version])
+  @@index([definitionId, status])
+  @@index([compiledAt])
+  @@index([updatedAt])
+  @@map("email_template_versions")
+}
+
+model EmailTemplateTestLog {
+  id                     String   @id @default(uuid()) @db.Uuid
+  templateVersionId      String   @map("template_version_id") @db.Uuid
+  recipientEmail         String   @map("recipient_email") @db.VarChar(255)
+  sampleVariablesJson    Json?    @map("sample_variables_json")
+  deliveryLogId          String?  @map("delivery_log_id") @db.Uuid
+  initiatedByAdminUserId String?  @map("initiated_by_admin_user_id") @db.Uuid
+  createdAt              DateTime @default(now()) @map("created_at")
+
+  templateVersion EmailTemplateVersion @relation(fields: [templateVersionId], references: [id], onDelete: Cascade)
+
+  @@index([templateVersionId, createdAt])
+  @@index([recipientEmail, createdAt])
+  @@map("email_template_test_logs")
+}
+
+model EmailDeliveryLog {
+  id                     String              @id @default(uuid()) @db.Uuid
+  category               EmailCategory
+  smtpAccountId          String?             @map("smtp_account_id") @db.Uuid
+  templateKey            String?             @map("template_key") @db.VarChar(120)
+  recipientEmail         String              @map("recipient_email") @db.VarChar(255)
+  recipientUserId        String?             @map("recipient_user_id") @db.Uuid
+  subjectSnapshot        String?             @map("subject_snapshot") @db.VarChar(500)
+  htmlSnapshot           String?             @map("html_snapshot")
+  textSnapshot           String?             @map("text_snapshot")
+  status                 EmailDeliveryStatus @default(QUEUED)
+  providerMessageId      String?             @map("provider_message_id") @db.VarChar(255)
+  providerResponse       String?             @map("provider_response")
+  errorMessage           String?             @map("error_message") @db.VarChar(4000)
+  retryCount             Int                 @default(0) @map("retry_count")
+  initiatedByAdminUserId String?             @map("initiated_by_admin_user_id") @db.Uuid
+  correlationJson        Json?               @map("correlation_json")
+  lastAttemptAt          DateTime?           @map("last_attempt_at")
+  sentAt                 DateTime?           @map("sent_at")
+  createdAt              DateTime            @default(now()) @map("created_at")
+
+  smtpAccount SmtpAccount? @relation(fields: [smtpAccountId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([category, createdAt])
+  @@index([recipientEmail, createdAt])
+  @@index([recipientUserId, createdAt])
+  @@index([smtpAccountId, createdAt])
+  @@index([templateKey, createdAt])
+  @@map("email_delivery_logs")
+}
+
+model EmailVerificationToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  email      String    @db.VarChar(255)
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  consumedAt DateTime? @map("consumed_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([userId, expiresAt])
+  @@index([email, expiresAt])
+  @@map("email_verification_tokens")
+}
+
+model PasswordResetToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  email      String    @db.VarChar(255)
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  consumedAt DateTime? @map("consumed_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([userId, expiresAt])
+  @@index([email, expiresAt])
+  @@map("password_reset_tokens")
+}
+
+enum InAppAlertStatus {
+  DRAFT
+  ACTIVE
+  DISABLED
+  EXPIRED
+}
+
+enum InAppAlertCadence {
+  ONCE_EVER
+  ONCE_DAILY
+  EVERY_APP_START
+  CRON
+  EVENT_TRIGGERED
+  EVENT_ONCE
+}
+
+enum InAppAlertDeliveryAction {
+  SHOWN
+  ACKNOWLEDGED
+  DISMISSED
+}
+
+model InAppAlert {
+  id                 String            @id @default(uuid()) @db.Uuid
+  title              String            @db.VarChar(140)
+  body               String
+  footerText         String?           @map("footer_text") @db.VarChar(500)
+  confirmButtonLabel String            @default("OK") @map("confirm_button_label") @db.VarChar(60)
+  status             InAppAlertStatus  @default(DRAFT)
+  priority           Int               @default(0)
+  startAt            DateTime          @default(now()) @map("start_at")
+  endAt              DateTime?         @map("end_at")
+  cadence            InAppAlertCadence @default(ONCE_EVER)
+  cronExpression     String?           @map("cron_expression") @db.VarChar(120)
+  eventTriggerKey    String?           @map("event_trigger_key") @db.VarChar(120)
+
+  targetAllUsers Boolean  @default(true) @map("target_all_users")
+  targetRoles    String[] @default([]) @map("target_roles")
+  targetUserIds  String[] @default([]) @map("target_user_ids") @db.Uuid
+  targetPlatforms String[] @default([]) @map("target_platforms")
+  minAppVersion  String?  @map("min_app_version") @db.VarChar(40)
+  maxAppVersion  String?  @map("max_app_version") @db.VarChar(40)
+
+  metadataJson Json? @map("metadata_json")
+
+  createdByAdminUserId String? @map("created_by_admin_user_id") @db.Uuid
+  updatedByAdminUserId String? @map("updated_by_admin_user_id") @db.Uuid
+
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  deliveries InAppAlertDelivery[]
+
+  @@index([status, startAt, endAt])
+  @@index([eventTriggerKey, status, priority])
+  @@index([priority, createdAt])
+  @@index([deletedAt])
+  @@map("in_app_alerts")
+}
+
+model InAppAlertDelivery {
+  id              String                    @id @default(uuid()) @db.Uuid
+  alertId         String                    @map("alert_id") @db.Uuid
+  userId          String                    @map("user_id") @db.Uuid
+  eventTriggerKey String?                   @map("event_trigger_key") @db.VarChar(120)
+  firstShownAt    DateTime?                 @map("first_shown_at")
+  lastShownAt     DateTime?                 @map("last_shown_at")
+  impressionCount Int                       @default(0) @map("impression_count")
+  acknowledgedAt  DateTime?                 @map("acknowledged_at")
+  dismissedAt     DateTime?                 @map("dismissed_at")
+  lastAction      InAppAlertDeliveryAction? @map("last_action")
+  metadataJson    Json?                     @map("metadata_json")
+  createdAt       DateTime                  @default(now()) @map("created_at")
+  updatedAt       DateTime                  @updatedAt @map("updated_at")
+
+  alert InAppAlert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+
+  @@unique([alertId, userId])
+  @@index([userId, lastShownAt])
+  @@index([alertId, acknowledgedAt])
+  @@index([alertId, dismissedAt])
+  @@map("in_app_alert_deliveries")
+}

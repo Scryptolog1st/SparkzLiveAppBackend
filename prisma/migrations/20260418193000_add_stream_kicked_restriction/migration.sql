@@ -1,0 +1,1 @@
+ALTER TYPE "RestrictionKind" ADD VALUE IF NOT EXISTS 'KICKED';
