@@ -33,7 +33,7 @@ reviews:
     auto_incremental_review: true
     auto_pause_after_reviewed_commits: 5
     base_branches:
-      - "optimization"
+      - ".*optimization.*"
       - "release/.*"
       - "hotfix/.*"
     ignore_title_keywords:
@@ -180,16 +180,7 @@ reviews:
         - Reconnect-sensitive changes.
         - Any payload or permission change that could break iOS or Android live media behavior.
 
-    - path: "**/*.spec.ts"
-      instructions: |
-        Review tests for meaningful backend coverage.
-        Check:
-        - Tests cover success, failure, authorization, and edge cases.
-        - Tests reflect the real API contract used by the mobile app.
-        - Tests do not only assert implementation details.
-        - Important business logic for coins, gifts, moderation, streams, and auth is covered.
-
-    - path: "**/*.test.ts"
+    - path: "**/*.{spec,test}.ts"
       instructions: |
         Review tests for meaningful backend coverage.
         Check:
