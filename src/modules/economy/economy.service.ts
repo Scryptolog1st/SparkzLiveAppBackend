@@ -1034,20 +1034,11 @@ export class EconomyService {
     // 4. Update battle score in real-time (deferred contribution record).
     // ------------------------------------------------------------------
     try {
-      if (battleKind === "v2" && battleGiftTarget.sideId) {
-        await this.battles.addScoreForDeferredGiftV2({
-          battleSessionId: battleGiftTarget.battleId,
-          sideId: battleGiftTarget.sideId,
-          diamondValue: totalDiamondValue,
-        });
-      } else {
-        await this.battles.addScoreForDeferredGiftV1({
-          battleId: battleGiftTarget.battleId,
-          streamId,
-          recipientUserId,
-          diamondValue: totalDiamondValue,
-        });
-      }
+      await this.battles.addScoreForDeferredGiftV2({
+        battleSessionId: battleGiftTarget.battleId,
+        sideId: battleGiftTarget.sideId,
+        diamondValue: totalDiamondValue,
+      });
     } catch (e) {
       console.error("[EconomyService] Failed to update battle score for deferred gift:", e);
       // Log error but don't throw - wallets are already updated, score can be

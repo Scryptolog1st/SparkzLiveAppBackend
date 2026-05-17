@@ -6,7 +6,7 @@
 // individual DB transactions for high-frequency gifting while still keeping
 // wallet balances and battle scores updated in realtime.
 
-import { Injectable } from "@nestjs/common";
+import { Injectable, OnModuleDestroy } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import {
   LedgerEntryType,
@@ -81,13 +81,13 @@ const AUTO_FLUSH_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours safety-net
 // ---------------------------------------------------------------------------
 
 @Injectable()
-export class GiftBatchService {
+export class GiftBatchService implements OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
   ) {
     // Periodic sweep for stale entries (battles that never cleanly ended).
-    setInterval(() => this.sweepStaleEntries(), 15 * 60 * 1000);
+    this.sweepInterval = setInterval(() => this.sweepStaleEntries(), 15 * 60 * 1000);
   }
 
   // Key format: battleId:senderUserId:recipientUserId:giftId
@@ -95,6 +95,16 @@ export class GiftBatchService {
 
   // Track keys currently being processed to prevent concurrent commits
   private readonly inFlight = new Set<string>();
+
+  // Interval handle for cleanup
+  private sweepInterval: NodeJS.Timeout | null = null;
+
+  onModuleDestroy() {
+    if (this.sweepInterval) {
+      clearInterval(this.sweepInterval);
+      this.sweepInterval = null;
+    }
+  }
 
   // -------------------------------------------------------------------------
   // Public API
@@ -289,11 +299,7 @@ export class GiftBatchService {
 
       // Battle contribution record(s).
       if (entry.battleKind === "v2" && entry.sideId) {
-        const alreadyRecorded = await (tx as any).battleSideContribution.findUnique({
-          where: { giftTxId: giftTx.id },
-        });
-
-        if (!alreadyRecorded) {
+        try {
           await (tx as any).battleSideContribution.create({
             data: {
               battleId: entry.battleId,
@@ -306,6 +312,9 @@ export class GiftBatchService {
               suddenDeathRound: 0,
             },
           });
+        } catch (err: any) {
+          const code = String(err?.code || "");
+          if (code !== "P2002") throw err; // ignore unique constraint violations
         }
       } else if (entry.battleKind === "v1") {
         // V1 battles use BattleContribution, keyed on giftTxId with a unique constraint.
