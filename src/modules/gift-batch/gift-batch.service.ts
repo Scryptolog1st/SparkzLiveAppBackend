@@ -64,6 +64,8 @@ type PendingEntry = {
   totalCoinCost: number;
   totalDiamondValue: number;
   firstPendingTxId: string;
+  /** All pendingTxIds from batched sends (used to update giftCoinSource FK references). */
+  allPendingTxIds: string[];
   createdAt: Date;
   updatedAt: Date;
   /** Accumulated IDs of committed GiftCoinSource rows across all batched sends. */
@@ -129,6 +131,7 @@ export class GiftBatchService implements OnModuleDestroy {
       existing.totalCoinCost += totalCoinCost;
       existing.totalDiamondValue += totalDiamondValue;
       existing.updatedAt = now;
+      existing.allPendingTxIds.push(params.pendingTxId);
       if (params.giftCoinSourceIds) {
         existing.giftCoinSourceIds.push(...params.giftCoinSourceIds);
       }
@@ -145,6 +148,7 @@ export class GiftBatchService implements OnModuleDestroy {
         totalCoinCost,
         totalDiamondValue,
         firstPendingTxId: params.pendingTxId,
+        allPendingTxIds: [params.pendingTxId],
         createdAt: now,
         updatedAt: now,
         giftCoinSourceIds: params.giftCoinSourceIds ?? [],
@@ -252,9 +256,23 @@ export class GiftBatchService implements OnModuleDestroy {
     entry: PendingEntry,
     config: CreatorEarningsConfigLocal,
   ): Promise<void> {
-    const giftTxId = randomUUID();
+    // Use the first pending transaction ID as the final gift transaction ID
+    // to preserve FK references from giftCoinSource rows created earlier
+    const giftTxId = entry.firstPendingTxId;
 
     await this.prisma.$transaction(async (tx) => {
+      // Update any giftCoinSource rows that reference other pendingTxIds
+      // (from subsequent batched sends) to point to the single final giftTxId
+      const otherPendingTxIds = entry.allPendingTxIds.filter(id => id !== giftTxId);
+
+      if (otherPendingTxIds.length > 0) {
+        await tx.$executeRaw`
+          UPDATE gift_coin_sources
+          SET gift_tx_id = ${giftTxId}::uuid
+          WHERE gift_tx_id = ANY(${otherPendingTxIds}::uuid[])
+        `;
+      }
+
       // Create the single aggregated GiftTransaction.
       const giftTx = await tx.giftTransaction.create({
         data: {
@@ -376,11 +394,23 @@ export class GiftBatchService implements OnModuleDestroy {
         : config.defaultHoldDays;
     const holdUntil = this.addDays(now, holdDays);
 
+    // Use first coin source ID for FK requirement, but preserve all IDs in metadata
+    const giftCoinSourceId = entry.giftCoinSourceIds.length > 0
+      ? entry.giftCoinSourceIds[0]
+      : null;
+
+    if (!giftCoinSourceId) {
+      throw new Error(
+        `No giftCoinSourceIds for batch entry: battle=${entry.battleId} ` +
+        `sender=${entry.senderUserId} recipient=${entry.recipientUserId} gift=${entry.gift.id}`
+      );
+    }
+
     await tx.streamerEarning.create({
       data: {
         streamerUserId: entry.recipientUserId,
         giftTxId,
-        giftCoinSourceId: entry.giftCoinSourceIds[0],
+        giftCoinSourceId,
 
         diamondsEarned: entry.totalDiamondValue,
         coinsSourceUsed: entry.totalCoinCost,
@@ -401,6 +431,7 @@ export class GiftBatchService implements OnModuleDestroy {
           giftId: entry.gift.id,
           quantity: entry.quantity,
           holdDays,
+          giftCoinSourceIds: entry.giftCoinSourceIds,
         },
       },
     });
