@@ -1,6 +1,219 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
 language: "en-US"
+early_access: false
+
 reviews:
   profile: "assertive"
+
+  # Keep reviews useful and serious.
+  poem: false
+  in_progress_fortune: false
+  high_level_summary: true
+  changed_files_summary: true
+  sequence_diagrams: true
+  estimate_code_review_effort: true
+  assess_linked_issues: true
+  related_issues: true
+  related_prs: true
+  review_status: true
+
+  # Important for multi-repo review visibility.
+  # This helps you see whether CodeRabbit used the mobile repo as extra context.
+  review_details: true
+
+  # Do not automatically request changes unless you intentionally want CodeRabbit
+  # to become a blocking reviewer. Keep this false while you are still tuning it.
+  request_changes_workflow: false
+
+  # Let CodeRabbit review PRs into main and your backend optimization branch.
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 5
+    base_branches:
+      - "optimization"
+      - "release/.*"
+      - "hotfix/.*"
+    ignore_title_keywords:
+      - "wip"
+      - "draft"
+      - "do not review"
+      - "no review"
+
   path_filters:
-    - "!.env"  # Explicitly tells CodeRabbit to analyze your server-side environment paths
-# Triggering initial backend review
+    # Secrets / local env
+    - "!.env"
+    - "!.env.*"
+    - "!**/.env"
+    - "!**/.env.*"
+
+    # Dependency / generated / build artifacts
+    - "!node_modules/**"
+    - "!dist/**"
+    - "!build/**"
+    - "!coverage/**"
+    - "!.turbo/**"
+    - "!.next/**"
+    - "!tmp/**"
+    - "!temp/**"
+    - "!logs/**"
+    - "!*.log"
+
+    # Runtime/generated files that usually create noise
+    - "!uploads/**"
+    - "!public/uploads/**"
+    - "!storage/**"
+
+    # Keep these reviewed:
+    # - package.json
+    # - package-lock.json / yarn.lock / pnpm-lock.yaml
+    # - prisma/schema.prisma
+    # - prisma/migrations/**
+    # - src/**
+    # Lockfile and migration changes can break production, so do not ignore them.
+
+  path_instructions:
+    - path: "src/**/*.ts"
+      instructions: |
+        Review this backend TypeScript code for production safety.
+        Focus on:
+        - Runtime errors, undefined/null access, broken async handling, and race conditions.
+        - API response shape changes that could break the SparkzLive mobile app.
+        - Authentication and authorization checks.
+        - Input validation and unsafe trust of client-supplied values.
+        - Data consistency, transaction safety, and idempotency.
+        - Backward compatibility with existing mobile app behavior.
+        - Avoiding speculative refactors that are not necessary for the PR.
+
+    - path: "src/**/controller*.ts"
+      instructions: |
+        This file likely defines API endpoints consumed by the mobile app.
+        Carefully check:
+        - Route path changes.
+        - HTTP method changes.
+        - Request body/query/param validation.
+        - Response payload field names and nesting.
+        - Status codes and error shapes.
+        - Any breaking change to mobile flows such as auth, live streams, chat, gifts, coins, battles, profiles, WIFW, push notifications, deep links, or moderation.
+        If an endpoint contract changes, verify whether the linked mobile repository needs a matching change.
+
+    - path: "src/**/service*.ts"
+      instructions: |
+        Review service logic for backend correctness and business-rule safety.
+        Carefully check:
+        - Authorization checks are enforced server-side, not only by the mobile client.
+        - Coin, gift, wallet, purchase, payout, and balance logic cannot double-spend or go negative.
+        - Stream, guest box, battle, moderation, kick/ban, and role logic remains consistent.
+        - Database writes that should be atomic are protected by transactions or safe sequencing.
+        - Retry/idempotency behavior is safe for duplicate mobile requests.
+        - Existing working behavior is preserved unless the PR explicitly changes it.
+
+    - path: "prisma/schema.prisma"
+      instructions: |
+        Review Prisma schema changes with extreme care.
+        Focus on:
+        - Whether generated Prisma Client types will match the backend code.
+        - Whether required fields, relation names, enum values, and indexes are safe.
+        - Whether any renamed/removed field will break existing service code or the mobile app.
+        - Whether migrations are needed and compatible with existing production data.
+        - Whether API payloads need backward-compatible handling for old mobile clients.
+
+    - path: "prisma/migrations/**"
+      instructions: |
+        Review migrations for production database safety.
+        Flag:
+        - Destructive changes without an explicit safe migration path.
+        - Required columns added without defaults or backfill strategy.
+        - Renames that look like drop/create data loss.
+        - Missing indexes for new lookup patterns.
+        - Changes that require coordinated backend and mobile deployment.
+        Do not suggest direct database scripts unless the PR already uses a safe migration workflow.
+
+    - path: "**/*auth*.ts"
+      instructions: |
+        Review authentication and authorization code aggressively.
+        Check for:
+        - Missing user identity checks.
+        - Role/staff/super-admin privilege escalation.
+        - Users modifying their own staff role or bypassing moderation.
+        - Token/session validation gaps.
+        - Insecure assumptions based on mobile client behavior.
+
+    - path: "**/*gift*.ts"
+      instructions: |
+        Review gifting logic as money-adjacent business logic.
+        Check:
+        - Correct recipient attribution.
+        - Correct coin balance validation and deduction.
+        - No duplicate gift processing on retries.
+        - Chat/event payloads include enough information for mobile display.
+        - Guest-box gift behavior remains compatible with the mobile app.
+
+    - path: "**/*coin*.ts"
+      instructions: |
+        Review coin logic as money-adjacent business logic.
+        Check:
+        - Balance changes are atomic and auditable.
+        - Negative balances are impossible.
+        - Purchase/credit/debit flows are idempotent where needed.
+        - Mobile-visible balances and transaction responses remain stable.
+
+    - path: "**/*stream*.ts"
+      instructions: |
+        Review live stream logic for compatibility with SparkzLive mobile.
+        Check:
+        - Stream creation, stream category, tags, visibility, and feed filtering payloads.
+        - Join/leave participant lifecycle correctness.
+        - Kick/ban/moderation enforcement before users are shown as joined.
+        - Guest box, battle, chat, push notification, and LiveKit-related payload stability.
+        - Avoid backend changes that require a native mobile rebuild unless explicitly intended.
+
+    - path: "**/*livekit*.ts"
+      instructions: |
+        Review LiveKit integration carefully.
+        Check:
+        - Token grants and room permissions.
+        - Host, guest, participant, and viewer identities.
+        - Track publishing/subscription assumptions.
+        - Reconnect-sensitive changes.
+        - Any payload or permission change that could break iOS or Android live media behavior.
+
+    - path: "**/*.spec.ts"
+      instructions: |
+        Review tests for meaningful backend coverage.
+        Check:
+        - Tests cover success, failure, authorization, and edge cases.
+        - Tests reflect the real API contract used by the mobile app.
+        - Tests do not only assert implementation details.
+        - Important business logic for coins, gifts, moderation, streams, and auth is covered.
+
+    - path: "**/*.test.ts"
+      instructions: |
+        Review tests for meaningful backend coverage.
+        Check:
+        - Tests cover success, failure, authorization, and edge cases.
+        - Tests reflect the real API contract used by the mobile app.
+        - Tests do not only assert implementation details.
+        - Important business logic for coins, gifts, moderation, streams, and auth is covered.
+
+knowledge_base:
+  web_search:
+    enabled: true
+
+  code_guidelines:
+    enabled: true
+
+  learnings:
+    scope: "local"
+
+  issues:
+    scope: "local"
+
+  pull_requests:
+    scope: "local"
+
+  linked_repositories:
+    - repository: "Scryptolog1st/SparkzLiveMobileApp"
+      instructions: "This is the React Native / Expo mobile application consuming this backend. When changing API response payloads, route endpoints, auth behavior, stream/live media behavior, gift/coin payloads, chat events, battle events, moderation behavior, push notification payloads, deep link behavior, database-backed fields, Prisma schema, or validation rules, check this repository to ensure the backend change does not break iOS or Android mobile client operations. Preserve backward compatibility unless the PR explicitly includes the coordinated mobile update."
