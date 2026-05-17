@@ -87,7 +87,7 @@ reviews:
         - Backward compatibility with existing mobile app behavior.
         - Avoiding speculative refactors that are not necessary for the PR.
 
-    - path: "src/**/controller*.ts"
+    - path: "src/**/*.controller.ts"
       instructions: |
         This file likely defines API endpoints consumed by the mobile app.
         Carefully check:
@@ -99,7 +99,7 @@ reviews:
         - Any breaking change to mobile flows such as auth, live streams, chat, gifts, coins, battles, profiles, WIFW, push notifications, deep links, or moderation.
         If an endpoint contract changes, verify whether the linked mobile repository needs a matching change.
 
-    - path: "src/**/service*.ts"
+    - path: "src/**/*.service.ts"
       instructions: |
         Review service logic for backend correctness and business-rule safety.
         Carefully check:
