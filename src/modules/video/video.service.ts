@@ -517,7 +517,7 @@ private toVideoRole(role: StreamRole): VideoRole {
     }
 
     const status = String(battle.status || "").toUpperCase();
-    const mediaStatuses = new Set(["ACTIVE", "SUDDEN_DEATH", "REMATCH_ACTIVE"]);
+    const mediaStatuses = new Set(["ACTIVE", "SUDDEN_DEATH", "REMATCH_ACTIVE", "COOLDOWN"]);
 
     if (!mediaStatuses.has(status)) {
       throw new ForbiddenException("Battle is not active");
