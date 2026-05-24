@@ -466,6 +466,195 @@ private toVideoRole(role: StreamRole): VideoRole {
     }
   }
 
+
+  async issueBattleOpponentStreamToken(params: {
+    battleSessionId: string;
+    targetStreamId: string;
+    userId: string;
+  }): Promise<VideoTokenResponse> {
+    const battleSessionId = String(params.battleSessionId || "").trim();
+    const targetStreamId = String(params.targetStreamId || "").trim();
+    const userId = String(params.userId || "").trim();
+
+    if (!battleSessionId) {
+      throw new NotFoundException("Battle session not found");
+    }
+
+    if (!targetStreamId) {
+      throw new NotFoundException("Target stream not found");
+    }
+
+    if (!userId) {
+      throw new ForbiddenException("Missing user");
+    }
+
+    await this.assertNotPlatformBanned(userId);
+
+    const battle = await (this.prisma as any).battleSession.findUnique({
+      where: { id: battleSessionId },
+      include: {
+        sides: {
+          include: {
+            stream: {
+              select: {
+                id: true,
+                status: true,
+                hostUserId: true,
+                videoRoomName: true,
+                videoProvider: true,
+                endedAt: true,
+              },
+            },
+            participants: true,
+          },
+        },
+        participants: true,
+      },
+    });
+
+    if (!battle) {
+      throw new NotFoundException("Battle session not found");
+    }
+
+    const status = String(battle.status || "").toUpperCase();
+    const mediaStatuses = new Set(["ACTIVE", "SUDDEN_DEATH", "REMATCH_ACTIVE"]);
+
+    if (!mediaStatuses.has(status)) {
+      throw new ForbiddenException("Battle is not active");
+    }
+
+    const sides = Array.isArray(battle.sides) ? battle.sides : [];
+    const participants = Array.isArray(battle.participants) ? battle.participants : [];
+
+    const sideStreamIds: string[] = Array.from(
+      new Set<string>(
+        sides
+          .map((side: any) => String(side?.streamId || "").trim())
+          .filter((streamId: string): streamId is string => !!streamId),
+      ),
+    );
+
+    const targetSide = sides.find((side: any) => {
+      return String(side?.streamId || "").trim() === targetStreamId;
+    });
+
+    const targetStream = targetSide?.stream;
+
+    if (!targetSide || !targetStream) {
+      throw new ForbiddenException("Target stream is not part of this battle");
+    }
+
+    if (String(targetStream.status || "").toUpperCase() !== "LIVE") {
+      throw new ForbiddenException("Target stream is not live");
+    }
+
+    const isSideHost = sides.some((side: any) => String(side?.hostUserId || "") === userId);
+    const isBattleParticipant =
+      participants.some((participant: any) => {
+        return (
+          String(participant?.userId || "") === userId &&
+          String(participant?.status || "").toUpperCase() === "ACCEPTED" &&
+          !participant?.leftAt
+        );
+      }) ||
+      sides.some((side: any) => {
+        return (side?.participants || []).some((participant: any) => {
+          return (
+            String(participant?.userId || "") === userId &&
+            String(participant?.status || "").toUpperCase() === "ACCEPTED" &&
+            !participant?.leftAt
+          );
+        });
+      });
+
+    let isViewerOfBattleStream = false;
+
+    if (!isSideHost && !isBattleParticipant && sideStreamIds.length > 0) {
+      const streamParticipant = await (this.prisma as any).streamParticipant.findFirst({
+        where: {
+          streamId: { in: sideStreamIds },
+          userId,
+          leftAt: null,
+        },
+        select: { id: true },
+      });
+
+      isViewerOfBattleStream = !!streamParticipant;
+    }
+
+    if (!isSideHost && !isBattleParticipant && !isViewerOfBattleStream) {
+      throw new ForbiddenException("Join one of the battle streams first");
+    }
+
+    if (targetStream.hostUserId !== userId) {
+      const [blockedByTargetHost, kickedFromTargetStream, bannedFromTargetStream] =
+        await Promise.all([
+          this.isBlockedByHost(targetStream.hostUserId, userId),
+          this.isKickedFromStream(targetStream.id, userId),
+          this.isStreamBanned(targetStream.id, userId),
+        ]);
+
+      if (blockedByTargetHost) {
+        throw new ForbiddenException("Blocked by host");
+      }
+
+      if (kickedFromTargetStream) {
+        throw new ForbiddenException("Kicked from stream");
+      }
+
+      if (bannedFromTargetStream) {
+        throw new ForbiddenException("Banned");
+      }
+    }
+
+    const roomName = targetStream.videoRoomName || this.roomName(targetStream.id);
+
+    if (!targetStream.videoRoomName || !targetStream.videoProvider) {
+      this.prisma.stream
+        .update({
+          where: { id: targetStream.id },
+          data: {
+            videoProvider: "LIVEKIT",
+            videoRoomName: roomName,
+          },
+        })
+        .catch((err) => console.error("Non-critical stream update failed:", err));
+    }
+
+    const adapter = this.getLiveKitAdapter();
+    const identity = this.buildStableVideoIdentity(userId);
+    const role = "VIEWER" as VideoRole;
+
+    try {
+      return await adapter.getToken({
+        streamId: targetStream.id,
+        userId,
+        identity,
+        role,
+        roomName,
+      });
+    } catch (error) {
+      this.writeLiveKitLog({
+        level: "ERROR",
+        category: "BATTLE_OPPONENT_STREAM_TOKEN_ISSUE",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Failed to issue LiveKit opponent stream token.",
+        streamId: targetStream.id,
+        roomName,
+        userId,
+        detailsJson: {
+          battleSessionId,
+          targetStreamId,
+          sideStreamIds,
+        },
+      });
+
+      throw error;
+    }
+  }
+
   async issueAdminObserverToken(params: {
     streamId: string;
     adminUserId: string;
