@@ -733,13 +733,14 @@ export class EconomyService {
       throw new BadRequestException("Selected battle side is not active for this stream");
     }
 
+    const normalizedSourceStreamId = String(streamId || "").trim().toLowerCase();
     const battleStreamIds = new Set(
       ((side.battle?.sides || []) as any[])
-        .map((battleSide: any) => String(battleSide?.streamId || "").trim())
+        .map((battleSide: any) => String(battleSide?.streamId || "").trim().toLowerCase())
         .filter(Boolean),
     );
 
-    if (!battleStreamIds.has(streamId)) {
+    if (!battleStreamIds.has(normalizedSourceStreamId)) {
       throw new BadRequestException("Source stream is not part of this battle session");
     }
 
