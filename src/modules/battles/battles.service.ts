@@ -757,7 +757,7 @@ export class BattlesService {
 
       if (!battleId || !inviteId) continue;
 
-      await tx.battleInvite.updateMany({
+      const inviteCancelResult = await tx.battleInvite.updateMany({
         where: {
           id: inviteId,
           battleId,
@@ -770,6 +770,10 @@ export class BattlesService {
           respondedAt: now,
         },
       });
+
+      if (Number(inviteCancelResult?.count || 0) !== 1) {
+        continue;
+      }
 
       await tx.battleParticipant.updateMany({
         where: {
