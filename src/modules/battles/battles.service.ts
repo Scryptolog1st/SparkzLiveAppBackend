@@ -868,14 +868,20 @@ export class BattlesService {
     await this.assertMutualFavoriteV2(actorUserId, recipientHostUserId);
     await this.assertUsersNotBlockedEitherDirectionV2(actorUserId, recipientHostUserId);
 
-    const inviteExpiresAt = new Date(
-      Date.now() + DIRECT_HOST_INVITE_RECOMMENDED_TIMEOUT_SECONDS * 1000,
-    );
-
     const created = await (this.prisma as any).$transaction(async (tx: any) => {
       await this.acquireBattleDirectInviteActorLockV2(tx, actorUserId);
 
-      const now = new Date();
+      const transactionNowRows = await tx.$queryRawUnsafe(
+        "SELECT clock_timestamp() AS now",
+      );
+      const transactionNow = Array.isArray(transactionNowRows)
+        ? transactionNowRows[0]?.now
+        : null;
+      const now = transactionNow ? new Date(transactionNow) : new Date();
+      const inviteExpiresAt = new Date(
+        now.getTime() + DIRECT_HOST_INVITE_RECOMMENDED_TIMEOUT_SECONDS * 1000,
+      );
+
       const pendingOutgoingInvites = await this.getPendingOutgoingDirectInviteSessionsV2(
         actorUserId,
         tx,
@@ -976,6 +982,7 @@ export class BattlesService {
       return {
         battleId: battle.id,
         inviteId: invite.id,
+        inviteExpiresAt,
         replacedOutgoingInvites,
       };
     });
@@ -996,14 +1003,14 @@ export class BattlesService {
       inviteId: created.inviteId,
       senderUserId: actorUserId,
       recipientUserId: recipientHostUserId,
-      inviteExpiresAt: inviteExpiresAt.toISOString(),
+      inviteExpiresAt: created.inviteExpiresAt.toISOString(),
     });
 
     return {
       ok: true,
       battleId: created.battleId,
       inviteId: created.inviteId,
-      inviteExpiresAt: inviteExpiresAt.toISOString(),
+      inviteExpiresAt: created.inviteExpiresAt.toISOString(),
       battle: serialized,
       replacedOutgoingInvites,
       replacedOutgoingInviteCount: replacedOutgoingInvites.length,
