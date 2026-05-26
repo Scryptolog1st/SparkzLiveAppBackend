@@ -180,6 +180,7 @@ export class BattlesController {
       battleType: body.battleType,
       recipientHostUserId: body.recipientHostUserId,
       durationSeconds: body.durationSeconds,
+      cancelPendingOutgoing: body.cancelPendingOutgoing === true,
     });
   }
 
