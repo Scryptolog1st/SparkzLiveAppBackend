@@ -40,7 +40,6 @@ export class BattlesService {
     const server = (this.realtime as any).server;
     if (!server) return;
 
-    server.emit(event, payload);
     if (payload?.streamId) {
       server.to(this.room(payload.streamId)).emit(event, payload);
     }

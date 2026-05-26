@@ -733,6 +733,16 @@ export class EconomyService {
       throw new BadRequestException("Selected battle side is not active for this stream");
     }
 
+    const battleStreamIds = new Set(
+      ((side.battle?.sides || []) as any[])
+        .map((battleSide: any) => String(battleSide?.streamId || "").trim())
+        .filter(Boolean),
+    );
+
+    if (!battleStreamIds.has(streamId)) {
+      throw new BadRequestException("Source stream is not part of this battle session");
+    }
+
     const battle = side.battle;
     const endsAtMs = battle?.endsAt ? new Date(battle.endsAt).getTime() : null;
 
@@ -1151,17 +1161,19 @@ export class EconomyService {
     });
 
     if (!txResult.reused) {
-      try {
-        await this.battles.applyGiftToActiveBattle({
-          streamId,
-          giftTxId: txResult.giftTx.id,
-          senderUserId,
-          recipientUserId,
-          diamondValue: txResult.giftTx.diamondValue,
-          createdAt: txResult.giftTx.createdAt,
-        });
-      } catch (e) {
-        console.warn("[EconomyService] battle hook failed:", e);
+      if (!battleGiftTarget) {
+        try {
+          await this.battles.applyGiftToActiveBattle({
+            streamId,
+            giftTxId: txResult.giftTx.id,
+            senderUserId,
+            recipientUserId,
+            diamondValue: txResult.giftTx.diamondValue,
+            createdAt: txResult.giftTx.createdAt,
+          });
+        } catch (e) {
+          console.warn("[EconomyService] legacy battle hook failed:", e);
+        }
       }
 
       try {
