@@ -1269,14 +1269,12 @@ export class RealtimeGateway
   }
 
   emitBattleStarted(payload: any) {
-    this.server.emit("battle.started", payload);
     if (payload?.streamId) {
       this.server.to(this.room(payload.streamId)).emit("battle.started", payload);
     }
   }
 
   emitBattleScoreUpdated(payload: any) {
-    this.server.emit("battle.scoreUpdated", payload);
     if (payload?.streamId) {
       this.server
         .to(this.room(payload.streamId))
@@ -1285,14 +1283,12 @@ export class RealtimeGateway
   }
 
   emitBattleEnded(payload: any) {
-    this.server.emit("battle.ended", payload);
     if (payload?.streamId) {
       this.server.to(this.room(payload.streamId)).emit("battle.ended", payload);
     }
   }
 
   emitBattleMvp(payload: any) {
-    this.server.emit("battle.mvp", payload);
     if (payload?.streamId) {
       this.server.to(this.room(payload.streamId)).emit("battle.mvp", payload);
     }
