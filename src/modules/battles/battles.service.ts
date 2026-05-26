@@ -626,12 +626,120 @@ export class BattlesService {
     });
   }
 
+  private async getPendingOutgoingDirectInviteSessionsV2(actorUserId: string) {
+    const sessions = await (this.prisma as any).battleSession.findMany({
+      where: {
+        status: "INVITING",
+        invites: {
+          some: {
+            kind: "HOST_DIRECT",
+            status: "PENDING",
+            senderUserId: actorUserId,
+          },
+        },
+      },
+      include: this.getBattleSessionIncludeV2(),
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    });
+
+    return (sessions as any[])
+      .map((session: any) => {
+        const invites = Array.isArray(session?.invites) ? session.invites : [];
+        const invite = invites.find((row: any) =>
+          row?.kind === "HOST_DIRECT" &&
+          row?.status === "PENDING" &&
+          row?.senderUserId === actorUserId
+        );
+
+        if (!invite) return null;
+
+        return {
+          session,
+          battleId: session.id,
+          inviteId: invite.id,
+          invite,
+        };
+      })
+      .filter(Boolean);
+  }
+
+  private async cancelPendingOutgoingDirectInviteSessionsV2(
+    pendingInvites: any[],
+    actorUserId: string,
+  ) {
+    const now = new Date();
+    const cancelled: any[] = [];
+
+    for (const pending of pendingInvites) {
+      const battleId = String(pending?.battleId || "").trim();
+      const inviteId = String(pending?.inviteId || "").trim();
+
+      if (!battleId || !inviteId) continue;
+
+      await (this.prisma as any).$transaction(async (tx: any) => {
+        await tx.battleInvite.updateMany({
+          where: {
+            id: inviteId,
+            battleId,
+            kind: "HOST_DIRECT",
+            status: "PENDING",
+            senderUserId: actorUserId,
+          },
+          data: {
+            status: "CANCELLED",
+            respondedAt: now,
+          },
+        });
+
+        await tx.battleParticipant.updateMany({
+          where: {
+            battleId,
+            status: "INVITED",
+          },
+          data: {
+            status: "REMOVED",
+            leftAt: now,
+          },
+        });
+
+        await tx.battleSession.updateMany({
+          where: {
+            id: battleId,
+            status: "INVITING",
+          },
+          data: {
+            status: "CANCELLED",
+            endedReason: "CANCELLED",
+          },
+        });
+      });
+
+      const serialized = await this.reloadSerializedBattleSessionV2(battleId);
+
+      this.emitBattleV2EventToSessionStreams("battle.v2.inviteCancelled", serialized, {
+        inviteId,
+        cancelledByUserId: actorUserId,
+        replacedByNewInvite: true,
+      });
+
+      cancelled.push({
+        battleId,
+        inviteId,
+        battle: serialized,
+      });
+    }
+
+    return cancelled;
+  }
+
   async createDirectInviteBattleV2(params: {
     streamId: string;
     actorUserId: string;
     battleType: string;
     recipientHostUserId: string;
     durationSeconds: number;
+    cancelPendingOutgoing?: boolean;
   }) {
     const { streamId, actorUserId, recipientHostUserId } = params;
     const battleType = this.assertDirectInviteBattleTypeV2(params.battleType);
@@ -659,6 +767,23 @@ export class BattlesService {
 
     await this.assertMutualFavoriteV2(actorUserId, recipientHostUserId);
     await this.assertUsersNotBlockedEitherDirectionV2(actorUserId, recipientHostUserId);
+
+    const pendingOutgoingInvites = await this.getPendingOutgoingDirectInviteSessionsV2(actorUserId);
+    let replacedOutgoingInvites: any[] = [];
+
+    if (pendingOutgoingInvites.length > 0) {
+      if (params.cancelPendingOutgoing !== true) {
+        throw new BadRequestException(
+          "You already have a pending sent battle invite. Confirm replacement to cancel it and send a new invite.",
+        );
+      }
+
+      replacedOutgoingInvites = await this.cancelPendingOutgoingDirectInviteSessionsV2(
+        pendingOutgoingInvites,
+        actorUserId,
+      );
+    }
+
     await this.assertUsersBattleAvailableV2([actorUserId, recipientHostUserId]);
 
     const inviteExpiresAt = new Date(
@@ -760,6 +885,8 @@ export class BattlesService {
       inviteId: created.inviteId,
       inviteExpiresAt: inviteExpiresAt.toISOString(),
       battle: serialized,
+      replacedOutgoingInvites,
+      replacedOutgoingInviteCount: replacedOutgoingInvites.length,
       notes: [
         "Direct invite created in INVITING state.",
         "Accept/start logic is intentionally not enabled until Stage 2C.",
@@ -2116,6 +2243,14 @@ export class BattlesService {
       actorUserId,
       incoming,
       outgoing,
+      counts: {
+        incomingPending: incoming.length,
+        outgoingPending: outgoing.length,
+        totalPending: incoming.length + outgoing.length,
+      },
+      incomingPendingCount: incoming.length,
+      outgoingPendingCount: outgoing.length,
+      totalPendingCount: incoming.length + outgoing.length,
       total: incoming.length + outgoing.length,
     };
   }
