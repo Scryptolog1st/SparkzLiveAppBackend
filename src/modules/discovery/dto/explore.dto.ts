@@ -36,6 +36,8 @@ export type ExploreHostSummary = {
 
 export type ExploreStreamItem = {
   id: string;
+  title: string;
+  streamTitle: string;
   host: ExploreHostSummary;
   startedAt: string;
   viewerCount: number;
