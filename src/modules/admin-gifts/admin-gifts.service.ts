@@ -76,10 +76,7 @@ export class AdminGiftsService {
   ) {
     try {
       const metadata = await this.getGiftCatalogMetadata();
-      this.realtime.emitGiftCatalogUpdated({
-        ...metadata,
-        reason,
-      });
+      this.realtime.emitGiftCatalogUpdated(metadata);
     } catch (error) {
       console.warn("[AdminGiftsService] failed to emit giftCatalog.updated:", error);
     }

@@ -4,6 +4,7 @@ import { RealtimeModule } from "../realtime/realtime.module";
 import { BattlesModule } from "../battles/battles.module";
 import { MilestonesModule } from "../milestones/milestones.module";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { GiftBatchModule } from "../gift-batch/gift-batch.module";
 import { EconomyController } from "./economy.controller";
 import { EconomyService } from "./economy.service";
 
@@ -14,6 +15,7 @@ import { EconomyService } from "./economy.service";
     BattlesModule,
     MilestonesModule,
     NotificationsModule,
+    GiftBatchModule,
   ],
   controllers: [EconomyController],
   providers: [EconomyService],

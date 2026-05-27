@@ -1260,10 +1260,24 @@ export class RealtimeGateway
     this.server.emit("gift.sent", payload);
   }
 
+  /**
+   * Emit a real-time wallet balance update to a specific user.
+   * Used by the gift-batch system to push coin/diamond changes immediately
+   * after each gift send, before the final GiftTransaction is committed.
+   */
+  emitWalletUpdated(payload: {
+    userId: string;
+    coins?: number;
+    diamondsEarned?: number;
+    updatedAt: string;
+  }) {
+    this.server.to(`user:${payload.userId}`).emit("wallet.updated", payload);
+  }
+
   emitGiftCatalogUpdated(payload: {
     version: string;
     updatedAt: string;
-    reason: "admin_create" | "admin_update" | "admin_delete" | "admin_gift_category_create" | "admin_gift_category_update" | "admin_gift_category_delete";
+
   }) {
     this.server.emit("giftCatalog.updated", payload);
   }
