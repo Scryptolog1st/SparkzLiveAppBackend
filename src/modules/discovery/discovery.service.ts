@@ -236,6 +236,7 @@ export class DiscoveryService {
       select: {
         id: true,
         hostUserId: true,
+        title: true,
         startedAt: true,
       
         tagsJson: true,
@@ -337,6 +338,8 @@ export class DiscoveryService {
 
 return {
           id: stream.id,
+          title: String((stream as any).title || "").trim(),
+          streamTitle: String((stream as any).title || "").trim(),
           host,
           startedAt: stream.startedAt.toISOString(),
           viewerCount,
