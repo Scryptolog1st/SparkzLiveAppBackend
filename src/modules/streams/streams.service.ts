@@ -829,6 +829,7 @@ export class StreamsService {
       host: this.userSummary(stream.host),
       visibility: stream.visibility,
       tags: (stream.tagsJson as any[]) ?? [],
+      streamCategoryId: (stream as any)?.streamCategoryId ?? null,
       guests: Array.isArray(guestsOverride) ? guestsOverride : this.getStreamGuests(stream),
       layoutGridSize,
       gridSize: layoutGridSize,
@@ -1336,6 +1337,7 @@ export class StreamsService {
       host: this.userSummary(host),
       visibility: stream.visibility,
       tags: (stream.tagsJson as any[]) ?? [],
+      streamCategoryId: (stream as any)?.streamCategoryId ?? null,
       guests,
       layoutGridSize,
       gridSize: layoutGridSize,
@@ -1817,6 +1819,106 @@ export class StreamsService {
     const updated = await this.prisma.stream.update({
       where: { id: streamId },
       data: { pinnedMessage } as any,
+    });
+
+    const activeGuests = await this.getActiveGuests(streamId);
+    const payload = this.buildStreamPayload(updated, stream.host, activeGuests);
+
+    this.realtime.emitStreamStateUpdated(payload);
+
+    return {
+      ok: true,
+      stream: payload,
+    };
+  }
+
+  async updateStreamSettings(
+    streamId: string,
+    actorUserId: string,
+    input: {
+      title?: string;
+      color?: string | null;
+      tags?: string[];
+      streamCategoryId?: string | null;
+      categorySlug?: string | null;
+      categoryName?: string | null;
+      streamCategorySlug?: string | null;
+      streamCategoryName?: string | null;
+    },
+  ) {
+    const stream = await this.requireStream(streamId);
+
+    await this.streamStaff.assertHasPermission(
+      streamId,
+      actorUserId,
+      "EDIT_PINNED_MESSAGE",
+      "Only the host or authorized staff can edit stream info",
+    );
+
+    if (stream.status !== "LIVE") {
+      throw new BadRequestException("Stream is not live");
+    }
+
+    const nextTitle = String(input?.title ?? stream.title ?? "").trim().slice(0, 120);
+    if (!nextTitle) {
+      throw new BadRequestException("Stream title is required");
+    }
+
+    const hasColor = Object.prototype.hasOwnProperty.call(input ?? {}, "color");
+    const nextColor = hasColor
+      ? String(input?.color ?? "").trim().slice(0, 30) || null
+      : (stream as any).color;
+
+    const categoryInput = input ?? {};
+    const categoryUpdateRequested = [
+      "streamCategoryId",
+      "categorySlug",
+      "categoryName",
+      "streamCategorySlug",
+      "streamCategoryName",
+    ].some((field) => Object.prototype.hasOwnProperty.call(categoryInput, field));
+
+    const categoryLookupRequested = [
+      input?.streamCategoryId,
+      input?.categorySlug,
+      input?.categoryName,
+      input?.streamCategorySlug,
+      input?.streamCategoryName,
+    ].some((value) => String(value ?? "").trim().length > 0);
+
+    const selectedCategory = categoryLookupRequested
+      ? await this.resolveStreamCategoryForCreate(input)
+      : null;
+
+    if (categoryLookupRequested && !selectedCategory) {
+      throw new BadRequestException("Invalid stream category");
+    }
+
+    const existingTags = Array.isArray((stream as any)?.tagsJson)
+      ? ((stream as any).tagsJson as any[]).map((tag) => String(tag ?? "").trim()).filter(Boolean)
+      : [];
+
+    const providedTags = Array.isArray(input?.tags)
+      ? input.tags.map((tag) => String(tag ?? "").trim()).filter(Boolean)
+      : existingTags;
+
+    const streamTags = selectedCategory
+      ? this.mergeStreamCategoryTags(providedTags, selectedCategory)
+      : Array.from(new Set(providedTags)).slice(0, 12);
+
+    const data: any = {
+      title: nextTitle,
+      color: nextColor,
+      tagsJson: streamTags as any,
+    };
+
+    if (categoryUpdateRequested) {
+      data.streamCategoryId = selectedCategory ? selectedCategory.id : null;
+    }
+
+    const updated = await this.prisma.stream.update({
+      where: { id: streamId },
+      data,
     });
 
     const activeGuests = await this.getActiveGuests(streamId);

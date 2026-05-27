@@ -237,4 +237,24 @@ export class StreamsController {
       body?.text,
     );
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("/streams/:id/settings")
+  async updateStreamSettings(
+    @Req() req: JwtReq,
+    @Param("id") id: string,
+    @Body()
+    body: {
+      title?: string;
+      color?: string | null;
+      tags?: string[];
+      streamCategoryId?: string | null;
+      categorySlug?: string | null;
+      categoryName?: string | null;
+      streamCategorySlug?: string | null;
+      streamCategoryName?: string | null;
+    },
+  ) {
+    return this.streams.updateStreamSettings(id, req.user!.userId, body ?? {});
+  }
 }
