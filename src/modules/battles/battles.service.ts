@@ -627,7 +627,7 @@ export class BattlesService {
   }
 
   private async acquireBattleDirectInviteActorLockV2(tx: any, actorUserId: string) {
-    await tx.$queryRawUnsafe(
+    await tx.$executeRawUnsafe(
       "SELECT pg_advisory_xact_lock(hashtext('battle_direct_invite'), hashtext($1))",
       actorUserId,
     );
