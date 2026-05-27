@@ -81,6 +81,37 @@ export class DmsService {
         };
     }
 
+    private dmGiftPayload(giftTx?: any) {
+        if (!giftTx) return {};
+
+        const gift = giftTx?.gift ?? null;
+        const giftValue = Number(gift?.diamondValue ?? giftTx?.diamondValue ?? 0);
+        const giftCost = Number(gift?.coinCost ?? giftTx?.coinCost ?? 0);
+
+        return {
+            giftTx: {
+                id: giftTx.id ?? null,
+                giftId: giftTx.giftId ?? gift?.id ?? null,
+                coinCost: Number.isFinite(giftCost) ? giftCost : 0,
+                diamondValue: Number.isFinite(giftValue) ? giftValue : 0,
+            },
+            gift: gift
+                ? {
+                    id: gift.id,
+                    name: gift.name,
+                    diamondValue: gift.diamondValue,
+                    coinCost: gift.coinCost,
+                    mediaUrl: gift.mediaUrl,
+                    mediaType: gift.mediaType,
+                    effectSize: gift.effectSize,
+                }
+                : null,
+            giftName: gift?.name ?? null,
+            giftValue: Number.isFinite(giftValue) ? giftValue : 0,
+            giftMediaUrl: gift?.mediaUrl ?? null,
+        };
+    }
+
     private assertDmGiftIdempotentMatches(
         existing: {
             streamId: string | null;
@@ -117,6 +148,7 @@ export class DmsService {
             text: message.text,
             mediaUrl: message.mediaUrl,
             giftTxId: message.giftTxId,
+            ...this.dmGiftPayload((message as any).giftTx),
             isRead: message.isRead,
             createdAt:
                 message.createdAt instanceof Date
@@ -554,7 +586,7 @@ export class DmsService {
             orderBy: { createdAt: "desc" },
             include: {
                 sender: { include: { profile: true } },
-                giftTx: true,
+                giftTx: { include: { gift: true } },
             },
         });
 
@@ -576,6 +608,7 @@ export class DmsService {
             text: message.text,
             mediaUrl: message.mediaUrl,
             giftTxId: message.giftTxId,
+            ...this.dmGiftPayload((message as any).giftTx),
             isRead: message.isRead || unreadIds.includes(message.id),
             createdAt: message.createdAt.toISOString(),
         }));
@@ -694,6 +727,7 @@ export class DmsService {
         let giftTxId: string | null = null;
         let senderWalletAfterGift: any = null;
         let giftWasIdempotent = false;
+        let giftForPayload: any = null;
 
         if (requiredGiftId || requestedMessageType === DirectMessageType.GIFT) {
             if (isSelfDm) {
@@ -742,6 +776,7 @@ export class DmsService {
                         where: { giftTxId: existingGiftTx.id },
                         include: {
                             sender: { include: { profile: true } },
+                            giftTx: { include: { gift: true } },
                         },
                     });
 
@@ -756,6 +791,7 @@ export class DmsService {
 
             const gift = await this.prisma.gift.findUnique({ where: { id: giftToProcess } });
             if (!gift) throw new NotFoundException("Gift not found");
+            giftForPayload = gift;
 
             if (!giftTxId) {
                 const txResult = await this.prisma.$transaction(async (tx) => {
@@ -890,6 +926,17 @@ export class DmsService {
             text: message.text,
             mediaUrl: message.mediaUrl,
             giftTxId: message.giftTxId,
+            ...this.dmGiftPayload(
+                giftTxId
+                    ? {
+                        id: giftTxId,
+                        giftId: giftForPayload?.id ?? null,
+                        coinCost: giftForPayload?.coinCost ?? null,
+                        diamondValue: giftForPayload?.diamondValue ?? null,
+                        gift: giftForPayload,
+                    }
+                    : null,
+            ),
             ...(senderWalletAfterGift ? { senderWallet: this.walletSummary(senderWalletAfterGift) } : {}),
             ...(giftWasIdempotent ? { idempotent: true } : {}),
             isRead: message.isRead,
