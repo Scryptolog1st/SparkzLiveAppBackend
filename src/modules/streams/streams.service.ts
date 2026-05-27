@@ -1869,6 +1869,15 @@ export class StreamsService {
       ? String(input?.color ?? "").trim().slice(0, 30) || null
       : (stream as any).color;
 
+    const categoryInput = input ?? {};
+    const categoryUpdateRequested = [
+      "streamCategoryId",
+      "categorySlug",
+      "categoryName",
+      "streamCategorySlug",
+      "streamCategoryName",
+    ].some((field) => Object.prototype.hasOwnProperty.call(categoryInput, field));
+
     const categoryLookupRequested = [
       input?.streamCategoryId,
       input?.categorySlug,
@@ -1903,8 +1912,8 @@ export class StreamsService {
       tagsJson: streamTags as any,
     };
 
-    if (selectedCategory) {
-      data.streamCategoryId = selectedCategory.id;
+    if (categoryUpdateRequested) {
+      data.streamCategoryId = selectedCategory ? selectedCategory.id : null;
     }
 
     const updated = await this.prisma.stream.update({
