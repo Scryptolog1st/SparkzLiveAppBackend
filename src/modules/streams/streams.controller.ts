@@ -138,6 +138,18 @@ export class StreamsController {
     return this.streams.getHeartSnapshot(id);
   }
 
+  @Get("/streams/:id/hearts/all-time")
+  async allTimeHearts(
+    @Param("id") id: string,
+    @Query("limit") limit?: string,
+  ) {
+    const parsedLimit = Number(limit);
+    return this.streams.getAllTimeHeartSnapshot(
+      id,
+      Number.isFinite(parsedLimit) ? parsedLimit : 100,
+    );
+  }
+
   @Get("/streams/:id/leaderboard")
   async leaderboard(
     @Param("id") id: string,

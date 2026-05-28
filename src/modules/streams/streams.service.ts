@@ -1454,6 +1454,84 @@ export class StreamsService {
     return this.realtime.getHeartSnapshot(streamId);
   }
 
+  async getAllTimeHeartSnapshot(streamId: string, limit = 100) {
+    const stream = await this.requireStream(streamId);
+    const safeLimit = Number.isFinite(limit)
+      ? Math.max(1, Math.min(100, Math.floor(limit)))
+      : 100;
+
+    const [grouped, totals] = await Promise.all([
+      this.prisma.streamHeartStat.groupBy({
+        by: ["senderUserId"],
+        where: {
+          hostUserId: stream.hostUserId,
+        },
+        _sum: {
+          count: true,
+        },
+        orderBy: {
+          _sum: {
+            count: "desc",
+          },
+        },
+        take: safeLimit,
+      }),
+      this.prisma.streamHeartStat.aggregate({
+        where: {
+          hostUserId: stream.hostUserId,
+        },
+        _sum: {
+          count: true,
+        },
+      }),
+    ]);
+
+    const senderIds = grouped.map((row) => row.senderUserId);
+    const users = senderIds.length
+      ? await this.prisma.user.findMany({
+        where: {
+          id: { in: senderIds },
+        },
+        include: {
+          profile: true,
+        },
+      })
+      : [];
+
+    const userMap = new Map(users.map((user) => [user.id, this.userSummary(user)]));
+
+    const heartsList = grouped.map((row, index) => {
+      const user =
+        userMap.get(row.senderUserId) ??
+        ({
+          id: row.senderUserId,
+          username: "unknown",
+          displayName: "Unknown User",
+          avatarUrl: null,
+          level: null,
+        } as const);
+
+      return {
+        rank: index + 1,
+        id: user.id,
+        username: user.username,
+        name: user.displayName,
+        displayName: user.displayName,
+        avatarUrl: user.avatarUrl ?? null,
+        count: Number(row._sum.count ?? 0),
+      };
+    });
+
+    return {
+      streamId,
+      hostUserId: stream.hostUserId,
+      scope: "all_time",
+      generatedAt: new Date().toISOString(),
+      totalHearts: Number(totals._sum.count ?? 0),
+      heartsList,
+    };
+  }
+
   async getDiamondLeaderboard(streamId: string, limit = 50, period?: string) {
     const stream = await this.requireStream(streamId);
 
