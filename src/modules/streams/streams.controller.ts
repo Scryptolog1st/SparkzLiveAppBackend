@@ -143,7 +143,11 @@ export class StreamsController {
     @Param("id") id: string,
     @Query("limit") limit?: string,
   ) {
-    const parsedLimit = Number(limit);
+    const parsedLimit =
+      typeof limit === "string" && limit.trim() !== ""
+        ? Number(limit)
+        : Number.NaN;
+
     return this.streams.getAllTimeHeartSnapshot(
       id,
       Number.isFinite(parsedLimit) ? parsedLimit : 100,
