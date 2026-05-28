@@ -462,13 +462,17 @@ return {
       `;
     }
 
-    return `
-      SELECT
-        favorite_user_id::text AS "userId",
-        COUNT(*)::bigint AS value
-      FROM user_favorites
-      GROUP BY favorite_user_id
-    `;
+    if (type === 'favorites') {
+      return `
+        SELECT
+          favorite_user_id::text AS "userId",
+          COUNT(*)::bigint AS value
+        FROM user_favorites
+        GROUP BY favorite_user_id
+      `;
+    }
+
+    throw new BadRequestException('Unsupported leaderboard type.');
   }
 
   private mapLeaderboardRow(row: any) {
@@ -489,11 +493,36 @@ return {
     q: LeaderboardsQueryDto,
     currentUserId?: string,
   ): Promise<LeaderboardsResponse> {
+    const allowedTypes: LeaderboardType[] = [
+      'diamonds',
+      'likes_sent',
+      'gifters',
+      'stream_time',
+      'likes_received',
+      'favorites',
+    ];
+
+    if (q.period !== undefined && q.period !== 'alltime') {
+      throw new BadRequestException('Unsupported leaderboard period.');
+    }
+
+    if (q.type !== undefined && !allowedTypes.includes(q.type as LeaderboardType)) {
+      throw new BadRequestException('Unsupported leaderboard type.');
+    }
+
     const period = 'alltime' as const;
     const type = q.type ?? 'diamonds';
     const limit = Math.min(100, Math.max(1, q.limit ?? 50));
     const sourceSql = this.leaderboardSourceSql(type);
     const currentUserIdForSql = currentUserId ?? '';
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const excludedUserIds = currentUserId
+      ? (await this.getExcludedUserIds(currentUserId)).filter((id) => uuidPattern.test(id))
+      : [];
+    const excludedSql = excludedUserIds.length
+      ? `AND u.id NOT IN (${excludedUserIds.map((_, index) => `$${index + 3}::uuid`).join(', ')})`
+      : '';
+    const queryParams: any[] = [limit, currentUserIdForSql, ...excludedUserIds];
 
     const rows = await this.prisma.$queryRawUnsafe<any[]>(
       `
@@ -527,14 +556,14 @@ return {
         JOIN users u ON u.id = fs."userId"::uuid
         LEFT JOIN profiles p ON p.user_id = u.id
         WHERE COALESCE(u.is_platform_banned, false) = false
+          ${excludedSql}
       )
       SELECT *
       FROM ranked
       WHERE rank <= $1 OR "userId" = $2
       ORDER BY rank ASC
       `,
-      limit,
-      currentUserIdForSql,
+      ...queryParams,
     );
 
     const items = rows

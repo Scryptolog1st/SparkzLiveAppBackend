@@ -10,12 +10,12 @@ export type LeaderboardType =
   | 'favorites';
 
 export class LeaderboardsQueryDto {
-  @Transform(({ value }) => (typeof value === 'string' ? value : 'alltime'))
+  @Transform(({ value }) => (value === undefined ? undefined : value))
   @IsOptional()
   @IsIn(['alltime'])
   period?: 'alltime';
 
-  @Transform(({ value }) => (typeof value === 'string' ? value : 'diamonds'))
+  @Transform(({ value }) => (value === undefined ? undefined : value))
   @IsOptional()
   @IsIn(['diamonds', 'likes_sent', 'gifters', 'stream_time', 'likes_received', 'favorites'])
   type?: LeaderboardType;

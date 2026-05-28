@@ -1158,10 +1158,8 @@ export class RealtimeGateway
     const summary = await this.getSocketUserSummary(socket, userId);
     if (!summary) return;
 
-    const stats = this.recordHeart(streamId, summary);
-
-    void this.prisma.streamHeartStat
-      .upsert({
+    try {
+      await this.prisma.streamHeartStat.upsert({
         where: {
           streamId_senderUserId: {
             streamId,
@@ -1178,19 +1176,22 @@ export class RealtimeGateway
           hostUserId: activeStream.hostUserId,
           count: 1,
         },
-      })
-      .catch((error) => {
-        this.writeRealtimeLog({
-          level: "WARN",
-          category: "STREAM_HEART_STAT_WRITE_FAILED",
-          message: "Failed to persist stream heart stats.",
-          streamId,
-          userId,
-          detailsJson: {
-            error: error instanceof Error ? error.message : "Unknown error",
-          },
-        });
       });
+    } catch (error) {
+      this.writeRealtimeLog({
+        level: "WARN",
+        category: "STREAM_HEART_STAT_WRITE_FAILED",
+        message: "Failed to persist stream heart stats.",
+        streamId,
+        userId,
+        detailsJson: {
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+      });
+      return;
+    }
+
+    const stats = this.recordHeart(streamId, summary);
 
     const payload = {
       streamId,

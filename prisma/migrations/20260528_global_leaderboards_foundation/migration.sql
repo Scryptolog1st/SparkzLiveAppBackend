@@ -21,3 +21,18 @@ CREATE INDEX "stream_heart_stats_host_user_id_idx"
 
 CREATE INDEX "stream_heart_stats_stream_id_idx"
     ON "stream_heart_stats"("stream_id");
+
+ALTER TABLE "stream_heart_stats"
+    ADD CONSTRAINT "stream_heart_stats_stream_id_fkey"
+    FOREIGN KEY ("stream_id") REFERENCES "streams"("id")
+    ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "stream_heart_stats"
+    ADD CONSTRAINT "stream_heart_stats_sender_user_id_fkey"
+    FOREIGN KEY ("sender_user_id") REFERENCES "users"("id")
+    ON DELETE CASCADE ON UPDATE CASCADE;
+
+ALTER TABLE "stream_heart_stats"
+    ADD CONSTRAINT "stream_heart_stats_host_user_id_fkey"
+    FOREIGN KEY ("host_user_id") REFERENCES "users"("id")
+    ON DELETE CASCADE ON UPDATE CASCADE;
