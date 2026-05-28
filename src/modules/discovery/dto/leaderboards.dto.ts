@@ -1,16 +1,24 @@
 import { Transform } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
 
+export type LeaderboardType =
+  | 'diamonds'
+  | 'likes_sent'
+  | 'gifters'
+  | 'stream_time'
+  | 'likes_received'
+  | 'favorites';
+
 export class LeaderboardsQueryDto {
   @Transform(({ value }) => (typeof value === 'string' ? value : 'alltime'))
   @IsOptional()
-  @IsIn(['daily', 'weekly', 'monthly', 'alltime'])
-  period?: 'daily' | 'weekly' | 'monthly' | 'alltime';
+  @IsIn(['alltime'])
+  period?: 'alltime';
 
-  @Transform(({ value }) => (typeof value === 'string' ? value : 'earnings'))
+  @Transform(({ value }) => (typeof value === 'string' ? value : 'diamonds'))
   @IsOptional()
-  @IsIn(['earnings', 'gifters'])
-  type?: 'earnings' | 'gifters';
+  @IsIn(['diamonds', 'likes_sent', 'gifters', 'stream_time', 'likes_received', 'favorites'])
+  type?: LeaderboardType;
 
   @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
   @IsOptional()
@@ -22,6 +30,7 @@ export class LeaderboardsQueryDto {
 
 export type LeaderboardUser = {
   id: string;
+  publicId?: string | null;
   username: string;
   displayName: string | null;
   avatarUrl: string | null;
@@ -34,9 +43,14 @@ export type LeaderboardEntry = {
 };
 
 export type LeaderboardsResponse = {
-  period: 'daily' | 'weekly' | 'monthly' | 'alltime';
-  type: 'earnings' | 'gifters';
+  period: 'alltime';
+  type: LeaderboardType;
   generatedAt: string;
+  valueLabel: string;
+  hideValues: boolean;
+  totalValue: number;
   totalDiamonds: number;
+  totalUsers: number;
   items: LeaderboardEntry[];
+  currentUserRank: LeaderboardEntry | null;
 };

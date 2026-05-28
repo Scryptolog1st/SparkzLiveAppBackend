@@ -1135,7 +1135,18 @@ export class RealtimeGateway
     const streamId = (body?.streamId ?? "").trim();
     if (!streamId) return;
 
-    const okParticipant = await this.isActiveParticipant(streamId, userId);
+    const activeStream = await this.prisma.stream.findUnique({
+      where: { id: streamId },
+      select: { id: true, hostUserId: true, status: true },
+    });
+    if (!activeStream || activeStream.status !== "LIVE") return;
+
+    const okParticipant =
+      activeStream.hostUserId === userId ||
+      !!(await this.prisma.streamParticipant.findFirst({
+        where: { streamId, userId, leftAt: null },
+        select: { id: true },
+      }));
     if (!okParticipant) return;
 
     if (!this.consume(this.heartBuckets, `${userId}:${streamId}`, 20, 2000)) {
@@ -1148,6 +1159,38 @@ export class RealtimeGateway
     if (!summary) return;
 
     const stats = this.recordHeart(streamId, summary);
+
+    void this.prisma.streamHeartStat
+      .upsert({
+        where: {
+          streamId_senderUserId: {
+            streamId,
+            senderUserId: userId,
+          },
+        },
+        update: {
+          hostUserId: activeStream.hostUserId,
+          count: { increment: 1 },
+        },
+        create: {
+          streamId,
+          senderUserId: userId,
+          hostUserId: activeStream.hostUserId,
+          count: 1,
+        },
+      })
+      .catch((error) => {
+        this.writeRealtimeLog({
+          level: "WARN",
+          category: "STREAM_HEART_STAT_WRITE_FAILED",
+          message: "Failed to persist stream heart stats.",
+          streamId,
+          userId,
+          detailsJson: {
+            error: error instanceof Error ? error.message : "Unknown error",
+          },
+        });
+      });
 
     const payload = {
       streamId,

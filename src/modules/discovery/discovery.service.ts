@@ -2,7 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersSearchQueryDto, UsersSearchResponse } from './dto/users-search.dto';
 import { ExploreLiveStreamsQueryDto, ExploreLiveStreamsResponse } from './dto/explore.dto';
-import { LeaderboardsQueryDto, LeaderboardsResponse } from './dto/leaderboards.dto';
+import { LeaderboardsQueryDto, LeaderboardsResponse, LeaderboardType } from './dto/leaderboards.dto';
 
 type DiscoveryBoostRecord = {
   userId: string;
@@ -393,98 +393,172 @@ return {
     };
   }
 
+  private leaderboardValueLabel(type: LeaderboardType): string {
+    if (type === 'diamonds') return 'diamonds';
+    if (type === 'likes_sent') return 'likes sent';
+    if (type === 'gifters') return 'gift rank';
+    if (type === 'stream_time') return 'stream time';
+    if (type === 'likes_received') return 'likes received';
+    if (type === 'favorites') return 'fans';
+    return 'value';
+  }
+
+  private leaderboardHidesValues(type: LeaderboardType): boolean {
+    return type === 'gifters';
+  }
+
+  private leaderboardSourceSql(type: LeaderboardType): string {
+    if (type === 'diamonds') {
+      return `
+        SELECT
+          user_id::text AS "userId",
+          diamonds_earned::bigint AS value
+        FROM wallets
+      `;
+    }
+
+    if (type === 'likes_sent') {
+      return `
+        SELECT
+          sender_user_id::text AS "userId",
+          SUM(count)::bigint AS value
+        FROM stream_heart_stats
+        GROUP BY sender_user_id
+      `;
+    }
+
+    if (type === 'gifters') {
+      return `
+        SELECT
+          sender_user_id::text AS "userId",
+          SUM(diamond_value)::bigint AS value
+        FROM gift_transactions
+        GROUP BY sender_user_id
+      `;
+    }
+
+    if (type === 'stream_time') {
+      return `
+        SELECT
+          host_user_id::text AS "userId",
+          SUM(
+            GREATEST(
+              0,
+              FLOOR(EXTRACT(EPOCH FROM (COALESCE(ended_at, NOW()) - started_at)))
+            )
+          )::bigint AS value
+        FROM streams
+        GROUP BY host_user_id
+      `;
+    }
+
+    if (type === 'likes_received') {
+      return `
+        SELECT
+          host_user_id::text AS "userId",
+          SUM(count)::bigint AS value
+        FROM stream_heart_stats
+        GROUP BY host_user_id
+      `;
+    }
+
+    return `
+      SELECT
+        favorite_user_id::text AS "userId",
+        COUNT(*)::bigint AS value
+      FROM user_favorites
+      GROUP BY favorite_user_id
+    `;
+  }
+
+  private mapLeaderboardRow(row: any) {
+    return {
+      rank: Number(row.rank ?? 0),
+      user: {
+        id: String(row.userId ?? ''),
+        publicId: row.publicId ?? null,
+        username: String(row.username ?? ''),
+        displayName: row.displayName ? String(row.displayName) : null,
+        avatarUrl: row.avatarUrl ? String(row.avatarUrl) : null,
+      },
+      value: Number(row.value ?? 0),
+    };
+  }
+
   async getLeaderboards(
     q: LeaderboardsQueryDto,
     currentUserId?: string,
   ): Promise<LeaderboardsResponse> {
-    const period = q.period ?? 'alltime';
-    const type = q.type ?? 'earnings';
-    const limit = q.limit ?? 50;
-    const since = this.resolveSince(period);
-    const excludeIds = await this.getExcludedUserIds(currentUserId);
+    const period = 'alltime' as const;
+    const type = q.type ?? 'diamonds';
+    const limit = Math.min(100, Math.max(1, q.limit ?? 50));
+    const sourceSql = this.leaderboardSourceSql(type);
+    const currentUserIdForSql = currentUserId ?? '';
 
-    if (type === 'earnings') {
-      const [rows, totals] = await Promise.all([
-        this.prisma.giftTransaction.groupBy({
-          by: ['recipientUserId'],
-          where: since ? { createdAt: { gte: since } } : undefined,
-          _sum: { diamondValue: true },
-          orderBy: { _sum: { diamondValue: 'desc' } },
-          take: limit,
-        }),
-        this.prisma.giftTransaction.aggregate({
-          where: since ? { createdAt: { gte: since } } : undefined,
-          _sum: { diamondValue: true },
-        }),
-      ]);
+    const rows = await this.prisma.$queryRawUnsafe<any[]>(
+      `
+      WITH source AS (
+        ${sourceSql}
+      ),
+      filtered_source AS (
+        SELECT
+          "userId",
+          COALESCE(value, 0)::bigint AS value
+        FROM source
+        WHERE COALESCE(value, 0) > 0
+      ),
+      ranked AS (
+        SELECT
+          ROW_NUMBER() OVER (
+            ORDER BY
+              fs.value DESC,
+              COALESCE(NULLIF(p.display_name, ''), u.username) ASC,
+              u.id::text ASC
+          ) AS rank,
+          COUNT(*) OVER() AS "totalUsers",
+          SUM(fs.value) OVER() AS "totalValue",
+          u.id::text AS "userId",
+          u.public_id AS "publicId",
+          u.username AS username,
+          COALESCE(NULLIF(p.display_name, ''), u.username) AS "displayName",
+          p.avatar_url AS "avatarUrl",
+          fs.value AS value
+        FROM filtered_source fs
+        JOIN users u ON u.id = fs."userId"::uuid
+        LEFT JOIN profiles p ON p.user_id = u.id
+        WHERE COALESCE(u.is_platform_banned, false) = false
+      )
+      SELECT *
+      FROM ranked
+      WHERE rank <= $1 OR "userId" = $2
+      ORDER BY rank ASC
+      `,
+      limit,
+      currentUserIdForSql,
+    );
 
-      const ids = rows.map((r) => r.recipientUserId);
-      const users = await this.prisma.user.findMany({
-        where: { id: { in: ids, notIn: excludeIds } },
-        include: { profile: true },
-      });
+    const items = rows
+      .filter((row) => Number(row.rank ?? 0) <= limit)
+      .map((row) => this.mapLeaderboardRow(row));
 
-      const userById = new Map(users.map((user: any) => [user.id, user]));
+    const currentUserRow = currentUserId
+      ? rows.find((row) => String(row.userId ?? '') === currentUserId)
+      : null;
 
-      const finalItems = rows
-        .filter((row) => userById.has(row.recipientUserId))
-        .map((row, index) => {
-          const user = userById.get(row.recipientUserId)!;
-          return {
-            rank: index + 1,
-            user: this.publicUserSummary(user),
-            value: Number(row._sum?.diamondValue ?? 0),
-          };
-        });
-
-      return {
-        period,
-        type,
-        generatedAt: new Date().toISOString(),
-        totalDiamonds: Number(totals._sum?.diamondValue ?? 0),
-        items: finalItems,
-      };
-    }
-
-    const [rows, totals] = await Promise.all([
-      this.prisma.giftTransaction.groupBy({
-        by: ['senderUserId'],
-        where: since ? { createdAt: { gte: since } } : undefined,
-        _sum: { diamondValue: true },
-        orderBy: { _sum: { diamondValue: 'desc' } },
-        take: limit,
-      }),
-      this.prisma.giftTransaction.aggregate({
-        where: since ? { createdAt: { gte: since } } : undefined,
-        _sum: { diamondValue: true },
-      }),
-    ]);
-
-    const ids = rows.map((r) => r.senderUserId);
-    const users = await this.prisma.user.findMany({
-      where: { id: { in: ids, notIn: excludeIds } },
-      include: { profile: true },
-    });
-
-    const userById = new Map(users.map((user: any) => [user.id, user]));
-
-    const finalItems = rows
-      .filter((row) => userById.has(row.senderUserId))
-      .map((row, index) => {
-        const user = userById.get(row.senderUserId)!;
-        return {
-          rank: index + 1,
-          user: this.publicUserSummary(user),
-          value: Number(row._sum?.diamondValue ?? 0),
-        };
-      });
+    const totalValue = rows.length > 0 ? Number(rows[0].totalValue ?? 0) : 0;
+    const totalUsers = rows.length > 0 ? Number(rows[0].totalUsers ?? 0) : 0;
 
     return {
       period,
       type,
       generatedAt: new Date().toISOString(),
-      totalDiamonds: Number(totals._sum?.diamondValue ?? 0),
-      items: finalItems,
+      valueLabel: this.leaderboardValueLabel(type),
+      hideValues: this.leaderboardHidesValues(type),
+      totalValue,
+      totalDiamonds: type === 'diamonds' ? totalValue : 0,
+      totalUsers,
+      items,
+      currentUserRank: currentUserRow ? this.mapLeaderboardRow(currentUserRow) : null,
     };
   }
 }
