@@ -515,14 +515,7 @@ return {
     const limit = Math.min(100, Math.max(1, q.limit ?? 50));
     const sourceSql = this.leaderboardSourceSql(type);
     const currentUserIdForSql = currentUserId ?? '';
-    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    const excludedUserIds = currentUserId
-      ? (await this.getExcludedUserIds(currentUserId)).filter((id) => uuidPattern.test(id))
-      : [];
-    const excludedSql = excludedUserIds.length
-      ? `AND u.id NOT IN (${excludedUserIds.map((_, index) => `$${index + 3}::uuid`).join(', ')})`
-      : '';
-    const queryParams: any[] = [limit, currentUserIdForSql, ...excludedUserIds];
+    const queryParams: any[] = [limit, currentUserIdForSql];
 
     const rows = await this.prisma.$queryRawUnsafe<any[]>(
       `
@@ -556,7 +549,6 @@ return {
         JOIN users u ON u.id = fs."userId"::uuid
         LEFT JOIN profiles p ON p.user_id = u.id
         WHERE COALESCE(u.is_platform_banned, false) = false
-          ${excludedSql}
       )
       SELECT *
       FROM ranked
