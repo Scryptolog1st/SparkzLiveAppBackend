@@ -86,11 +86,11 @@ export class AdminOverviewService {
         },
       }),
       this.discovery.getLeaderboards(
-        { type: "earnings", period: "weekly", limit: 5 } as any,
+        { type: "diamonds", period: "alltime", limit: 5 },
         undefined,
       ),
       this.discovery.getLeaderboards(
-        { type: "gifters", period: "weekly", limit: 5 } as any,
+        { type: "gifters", period: "alltime", limit: 5 },
         undefined,
       ),
       this.prisma.payoutRequest.findMany({
