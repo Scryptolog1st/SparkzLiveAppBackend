@@ -101,6 +101,7 @@ export class VersionController {
 
   @Post("/version/check")
   checkMobileVersion(@Body() body?: VersionCheckRequest): VersionCheckResponse {
+    const appName = envText("APP_NAME") ?? "SparkzLive";
     const platform = normalizePlatform(body?.platform);
     const prefix = platformPrefix(platform);
 
@@ -154,10 +155,10 @@ export class VersionController {
 
     const message = updateRequired
       ? envText("MOBILE_UPDATE_REQUIRED_MESSAGE") ??
-        "This version of SparkzLive is outdated. Please update to continue."
+        `This version of ${appName} is outdated. Please update to continue.`
       : updateRecommended
         ? envText("MOBILE_UPDATE_RECOMMENDED_MESSAGE") ??
-          "A newer version of SparkzLive is available."
+          `A newer version of ${appName} is available.`
         : "Your app is up to date.";
 
     return {
