@@ -65,6 +65,19 @@ const EnvSchema = z.object({
   // Optional build metadata
   GIT_COMMIT: z.string().optional().nullable(),
   BUILT_AT: z.string().optional().nullable(),
+
+  // Mobile version enforcement.
+  // Defaults do not enforce updates. Set these env vars when you need to warn or force updates.
+  MOBILE_IOS_MIN_BUILD: z.coerce.number().int().nonnegative().default(0),
+  MOBILE_IOS_LATEST_BUILD: z.coerce.number().int().nonnegative().default(0),
+  MOBILE_IOS_STORE_URL: z.string().url().optional().nullable(),
+  MOBILE_ANDROID_MIN_BUILD: z.coerce.number().int().nonnegative().default(0),
+  MOBILE_ANDROID_LATEST_BUILD: z.coerce.number().int().nonnegative().default(0),
+  MOBILE_ANDROID_STORE_URL: z.string().url().optional().nullable(),
+  MOBILE_UPDATE_REQUIRED_TITLE: z.string().min(1).optional().nullable(),
+  MOBILE_UPDATE_REQUIRED_MESSAGE: z.string().min(1).optional().nullable(),
+  MOBILE_UPDATE_RECOMMENDED_TITLE: z.string().min(1).optional().nullable(),
+  MOBILE_UPDATE_RECOMMENDED_MESSAGE: z.string().min(1).optional().nullable(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
