@@ -3,7 +3,6 @@ import { NotificationType, VipBadgeKey } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { StreamsService } from '../streams/streams.service';
 
 const LIVE_COLOR_VIP_THRESHOLDS: Array<{
   key: VipBadgeKey;
@@ -114,7 +113,6 @@ export class JobsService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
-    private readonly streams: StreamsService,
   ) {
     const lookbackSec = Number(process.env.JOBS_SCAN_LOOKBACK_SECONDS ?? 300);
     const start = new Date(Date.now() - lookbackSec * 1000);
@@ -452,15 +450,6 @@ export class JobsService implements OnModuleInit, OnModuleDestroy {
     const retentionDays = Number(process.env.NOTIFICATIONS_RETENTION_DAYS ?? 30);
     const res = await this.notifications.deleteOlderThan(retentionDays);
     this.logger.debug(`notifications retention: deleted=${res.deleted} cutoff=${res.cutoff}`);
-
-    const sweptGhosts = await this.streams.sweepGhostParticipants().catch((e) => {
-      this.logger.error('Failed to sweep ghosts', e);
-      return 0;
-    });
-
-    if (sweptGhosts > 0) {
-      this.logger.log(`Swept ${sweptGhosts} ghost participants from streams.`);
-    }
 
     await this.emitGiftReceivedNotifications();
     await this.emitMilestoneReachedNotifications();
