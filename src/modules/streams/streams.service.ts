@@ -492,9 +492,12 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
   }) {
     const roomName = input.videoRoomName || this.buildVideoRoomName(input.streamId);
 
-    await this.prisma.$transaction(async (tx) => {
-      await tx.stream.update({
-        where: { id: input.streamId },
+    const ended = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.stream.updateMany({
+        where: {
+          id: input.streamId,
+          status: "LIVE",
+        },
         data: {
           status: "ENDED",
           endedAt: input.endedAt,
@@ -503,11 +506,21 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
         } as any,
       });
 
+      if (updated.count === 0) {
+        return false;
+      }
+
       await tx.streamParticipant.updateMany({
         where: { streamId: input.streamId, leftAt: null },
         data: { leftAt: input.endedAt },
       });
+
+      return true;
     });
+
+    if (!ended) {
+      return false;
+    }
 
     const payload = {
       streamId: input.streamId,
@@ -522,6 +535,8 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
     this.realtime.emitStreamEnded(payload);
     this.realtime.emitStreamStateUpdated(payload);
     this.queueLiveKitRoomTeardown(roomName);
+
+    return true;
   }
 
   async disconnectLiveKitParticipantFromStream(streamId: string, userId: string) {
@@ -2939,14 +2954,17 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
         }
 
         if (ghost.stream.hostUserId === ghost.userId) {
-          await this.endGhostHostStream({
+          const endedGhostStream = await this.endGhostHostStream({
             streamId: ghost.streamId,
             hostUserId: ghost.userId,
             videoRoomName: (ghost.stream as any)?.videoRoomName ?? null,
             endedAt: new Date(),
           });
 
-          sweptCount++;
+          if (endedGhostStream) {
+            sweptCount++;
+          }
+
           continue;
         }
 
