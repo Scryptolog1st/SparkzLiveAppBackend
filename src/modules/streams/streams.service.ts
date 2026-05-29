@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   OnModuleDestroy,
   OnModuleInit,
@@ -21,20 +22,21 @@ import type { VideoTokenResponse } from "../video/video.types";
 type StreamLeaderboardPeriod = "stream" | "daily" | "weekly" | "monthly" | "alltime";
 
 const HOST_GHOST_SWEEP_GRACE_MS = Number(
-  process.env.STREAM_HOST_GHOST_SWEEP_GRACE_MS ?? 3 * 60_000,
+  process.env.STREAM_HOST_GHOST_SWEEP_GRACE_MS ?? 20_000,
 );
 
 const GUEST_GHOST_SWEEP_GRACE_MS = Number(
-  process.env.STREAM_GUEST_GHOST_SWEEP_GRACE_MS ?? 3 * 60_000,
+  process.env.STREAM_GUEST_GHOST_SWEEP_GRACE_MS ?? 20_000,
 );
 
 const STREAM_GHOST_SWEEP_INTERVAL_MS = Math.max(
   5_000,
-  Number(process.env.STREAM_GHOST_SWEEP_INTERVAL_MS ?? 15_000),
+  Number(process.env.STREAM_GHOST_SWEEP_INTERVAL_MS ?? 5_000),
 );
 
 @Injectable()
 export class StreamsService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(StreamsService.name);
   private ghostSweepTimer: NodeJS.Timeout | null = null;
   private ghostSweepRunning = false;
   private normalizeStreamCategoryLookupValue(value: unknown) {
@@ -131,6 +133,10 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
   ) { }
 
   onModuleInit() {
+    this.logger.log(
+      `Stream ghost cleanup started intervalMs=${STREAM_GHOST_SWEEP_INTERVAL_MS} hostGraceMs=${HOST_GHOST_SWEEP_GRACE_MS} guestGraceMs=${GUEST_GHOST_SWEEP_GRACE_MS}`,
+    );
+
     this.ghostSweepTimer = setInterval(() => {
       void this.runGhostSweepInterval();
     }, STREAM_GHOST_SWEEP_INTERVAL_MS);
@@ -151,9 +157,13 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
     this.ghostSweepRunning = true;
 
     try {
-      await this.sweepGhostParticipants();
+      const sweptCount = await this.sweepGhostParticipants();
+
+      if (sweptCount > 0) {
+        this.logger.warn(`Stream ghost cleanup sweptCount=${sweptCount}`);
+      }
     } catch (error) {
-      console.warn("[StreamsService] ghost participant sweep failed:", error);
+      this.logger.warn("Stream ghost cleanup sweep failed", error as any);
     } finally {
       this.ghostSweepRunning = false;
     }
@@ -466,13 +476,22 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
       const participant = await this.findLiveKitParticipant(roomName, input.userId);
       return !!participant?.identity;
     } catch (error) {
+      const status = Number((error as any)?.status ?? (error as any)?.response?.status ?? 0);
+      const code = String((error as any)?.code ?? "").toLowerCase();
+      const message = String((error as any)?.message ?? "").toLowerCase();
+
+      if (status === 404 || code === "not_found" || message.includes("requested room does not exist")) {
+        this.logger.warn(
+          `LiveKit room missing during ghost sweep; treating participant as disconnected streamId=${input.streamId} roomName=${roomName} userId=${input.userId}`,
+        );
+        return false;
+      }
+
       // LiveKit API failures must not cause destructive ghost cleanup.
-      console.warn("[StreamsService] failed to inspect LiveKit participant during ghost sweep:", {
-        streamId: input.streamId,
-        roomName,
-        userId: input.userId,
-        error,
-      });
+      this.logger.warn(
+        `Failed to inspect LiveKit participant during ghost sweep; keeping participant alive streamId=${input.streamId} roomName=${roomName} userId=${input.userId}`,
+        error as any,
+      );
       return true;
     }
   }
@@ -535,6 +554,10 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
     this.realtime.emitStreamEnded(payload);
     this.realtime.emitStreamStateUpdated(payload);
     this.queueLiveKitRoomTeardown(roomName);
+
+    this.logger.warn(
+      `HOST_DISCONNECTED ghost stream ended streamId=${input.streamId} hostUserId=${input.hostUserId} roomName=${roomName}`,
+    );
 
     return true;
   }
@@ -723,7 +746,16 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
       const roomService = this.getRoomServiceClient();
       await roomService.deleteRoom(roomName);
     } catch (error) {
-      console.warn("[StreamsService] failed to teardown LiveKit room:", error);
+      const status = Number((error as any)?.status ?? (error as any)?.response?.status ?? 0);
+      const code = String((error as any)?.code ?? "").toLowerCase();
+      const message = String((error as any)?.message ?? "").toLowerCase();
+
+      if (status === 404 || code === "not_found" || message.includes("requested room does not exist")) {
+        this.logger.log(`LiveKit room already gone during teardown roomName=${roomName}`);
+        return;
+      }
+
+      this.logger.warn(`Failed to teardown LiveKit room roomName=${roomName}`, error as any);
     }
   }
 
@@ -2963,6 +2995,10 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
 
           if (endedGhostStream) {
             sweptCount++;
+          } else {
+            this.logger.log(
+              `Skipped ghost host stream end because stream was already ended streamId=${ghost.streamId} hostUserId=${ghost.userId}`,
+            );
           }
 
           continue;
@@ -2972,6 +3008,10 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
           where: { id: ghost.id },
           data: { leftAt: new Date() },
         });
+
+        this.logger.warn(
+          `Ghost host participant marked left streamId=${ghost.streamId} userId=${ghost.userId}`,
+        );
 
         sweptCount++;
         continue;
@@ -2998,6 +3038,10 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
         });
 
         this.clearGuestMediaState(ghost.streamId, ghost.userId);
+
+        this.logger.warn(
+          `Ghost guest removed from guest box streamId=${ghost.streamId} userId=${ghost.userId}`,
+        );
 
         const refreshedStream = await this.requireStream(ghost.streamId).catch(() => null);
 
