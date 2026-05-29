@@ -21,17 +21,44 @@ import type { VideoTokenResponse } from "../video/video.types";
 
 type StreamLeaderboardPeriod = "stream" | "daily" | "weekly" | "monthly" | "alltime";
 
-const HOST_GHOST_SWEEP_GRACE_MS = Number(
-  process.env.STREAM_HOST_GHOST_SWEEP_GRACE_MS ?? 20_000,
+const parseMsEnv = (name: string, fallbackMs: number, minMs = 0) => {
+  const raw = process.env[name];
+  const parsed = raw === undefined || raw === null || String(raw).trim() === ""
+    ? NaN
+    : Number(raw);
+
+  const safe = Number.isFinite(parsed) ? parsed : fallbackMs;
+
+  return Math.max(minMs, safe);
+};
+
+const isLiveKitRoomMissingError = (error: unknown) => {
+  const code = String((error as any)?.code ?? "").toLowerCase();
+  const message = String((error as any)?.message ?? "").toLowerCase();
+
+  return code === "not_found" || message.includes("requested room does not exist");
+};
+
+const HOST_GHOST_SWEEP_GRACE_MS = parseMsEnv(
+  "STREAM_HOST_GHOST_SWEEP_GRACE_MS",
+  20_000,
 );
 
-const GUEST_GHOST_SWEEP_GRACE_MS = Number(
-  process.env.STREAM_GUEST_GHOST_SWEEP_GRACE_MS ?? 20_000,
+const GUEST_GHOST_SWEEP_GRACE_MS = parseMsEnv(
+  "STREAM_GUEST_GHOST_SWEEP_GRACE_MS",
+  20_000,
 );
 
-const STREAM_GHOST_SWEEP_INTERVAL_MS = Math.max(
+const STREAM_GHOST_SWEEP_INTERVAL_MS = parseMsEnv(
+  "STREAM_GHOST_SWEEP_INTERVAL_MS",
   5_000,
-  Number(process.env.STREAM_GHOST_SWEEP_INTERVAL_MS ?? 5_000),
+  5_000,
+);
+
+const HOST_GHOST_STARTUP_GRACE_MS = parseMsEnv(
+  "STREAM_HOST_GHOST_STARTUP_GRACE_MS",
+  90_000,
+  HOST_GHOST_SWEEP_GRACE_MS,
 );
 
 @Injectable()
@@ -134,7 +161,7 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit() {
     this.logger.log(
-      `Stream ghost cleanup started intervalMs=${STREAM_GHOST_SWEEP_INTERVAL_MS} hostGraceMs=${HOST_GHOST_SWEEP_GRACE_MS} guestGraceMs=${GUEST_GHOST_SWEEP_GRACE_MS}`,
+      `Stream ghost cleanup started intervalMs=${STREAM_GHOST_SWEEP_INTERVAL_MS} hostGraceMs=${HOST_GHOST_SWEEP_GRACE_MS} guestGraceMs=${GUEST_GHOST_SWEEP_GRACE_MS} hostStartupGraceMs=${HOST_GHOST_STARTUP_GRACE_MS}`,
     );
 
     this.ghostSweepTimer = setInterval(() => {
@@ -476,11 +503,7 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
       const participant = await this.findLiveKitParticipant(roomName, input.userId);
       return !!participant?.identity;
     } catch (error) {
-      const status = Number((error as any)?.status ?? (error as any)?.response?.status ?? 0);
-      const code = String((error as any)?.code ?? "").toLowerCase();
-      const message = String((error as any)?.message ?? "").toLowerCase();
-
-      if (status === 404 || code === "not_found" || message.includes("requested room does not exist")) {
+      if (isLiveKitRoomMissingError(error)) {
         this.logger.warn(
           `LiveKit room missing during ghost sweep; treating participant as disconnected streamId=${input.streamId} roomName=${roomName} userId=${input.userId}`,
         );
@@ -501,6 +524,37 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
       where: { id: participantId },
       data: { lastPingAt: seenAt },
     });
+  }
+
+  private getTimeMs(value: Date | string | number | null | undefined) {
+    const time = value instanceof Date ? value.getTime() : new Date(value ?? NaN).getTime();
+    return Number.isFinite(time) ? time : null;
+  }
+
+  private hasParticipantPingedAfterJoin(participant: {
+    joinedAt?: Date | string | number | null;
+    lastPingAt?: Date | string | number | null;
+  }) {
+    const joinedAt = this.getTimeMs(participant.joinedAt);
+    const lastPingAt = this.getTimeMs(participant.lastPingAt);
+
+    if (joinedAt === null || lastPingAt === null) {
+      return false;
+    }
+
+    return lastPingAt > joinedAt + 1_000;
+  }
+
+  private isWithinHostStartupGrace(participant: {
+    joinedAt?: Date | string | number | null;
+  }) {
+    const joinedAt = this.getTimeMs(participant.joinedAt);
+
+    if (joinedAt === null) {
+      return false;
+    }
+
+    return Date.now() - joinedAt < HOST_GHOST_STARTUP_GRACE_MS;
   }
 
   private async endGhostHostStream(input: {
@@ -746,11 +800,7 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
       const roomService = this.getRoomServiceClient();
       await roomService.deleteRoom(roomName);
     } catch (error) {
-      const status = Number((error as any)?.status ?? (error as any)?.response?.status ?? 0);
-      const code = String((error as any)?.code ?? "").toLowerCase();
-      const message = String((error as any)?.message ?? "").toLowerCase();
-
-      if (status === 404 || code === "not_found" || message.includes("requested room does not exist")) {
+      if (isLiveKitRoomMissingError(error)) {
         this.logger.log(`LiveKit room already gone during teardown roomName=${roomName}`);
         return;
       }
@@ -2974,6 +3024,13 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
       }
 
       if (ghost.role === "HOST") {
+        if (!this.hasParticipantPingedAfterJoin(ghost) && this.isWithinHostStartupGrace(ghost)) {
+          this.logger.log(
+            `Skipping ghost host cleanup during startup grace streamId=${ghost.streamId} userId=${ghost.userId}`,
+          );
+          continue;
+        }
+
         const liveKitConnected = await this.isLiveKitParticipantConnectedForSweep({
           streamId: ghost.streamId,
           videoRoomName: (ghost.stream as any)?.videoRoomName ?? null,
