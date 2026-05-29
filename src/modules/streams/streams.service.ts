@@ -3,6 +3,8 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
@@ -26,8 +28,15 @@ const GUEST_GHOST_SWEEP_GRACE_MS = Number(
   process.env.STREAM_GUEST_GHOST_SWEEP_GRACE_MS ?? 3 * 60_000,
 );
 
+const STREAM_GHOST_SWEEP_INTERVAL_MS = Math.max(
+  5_000,
+  Number(process.env.STREAM_GHOST_SWEEP_INTERVAL_MS ?? 15_000),
+);
+
 @Injectable()
-export class StreamsService {
+export class StreamsService implements OnModuleInit, OnModuleDestroy {
+  private ghostSweepTimer: NodeJS.Timeout | null = null;
+  private ghostSweepRunning = false;
   private normalizeStreamCategoryLookupValue(value: unknown) {
     return String(value ?? "").trim();
   }
@@ -120,6 +129,35 @@ export class StreamsService {
     private readonly notifications: NotificationsService,
     private readonly streamStaff: StreamStaffService,
   ) { }
+
+  onModuleInit() {
+    this.ghostSweepTimer = setInterval(() => {
+      void this.runGhostSweepInterval();
+    }, STREAM_GHOST_SWEEP_INTERVAL_MS);
+
+    (this.ghostSweepTimer as any)?.unref?.();
+  }
+
+  onModuleDestroy() {
+    if (this.ghostSweepTimer) {
+      clearInterval(this.ghostSweepTimer);
+      this.ghostSweepTimer = null;
+    }
+  }
+
+  private async runGhostSweepInterval() {
+    if (this.ghostSweepRunning) return;
+
+    this.ghostSweepRunning = true;
+
+    try {
+      await this.sweepGhostParticipants();
+    } catch (error) {
+      console.warn("[StreamsService] ghost participant sweep failed:", error);
+    } finally {
+      this.ghostSweepRunning = false;
+    }
+  }
 
   private readonly guestLayoutOrder = [1, 2, 4, 6, 9, 12];
 
@@ -415,6 +453,75 @@ export class StreamsService {
       participants.find((p) => p.identity?.includes(userId)) ??
       null
     );
+  }
+
+  private async isLiveKitParticipantConnectedForSweep(input: {
+    streamId: string;
+    videoRoomName?: string | null;
+    userId: string;
+  }) {
+    const roomName = input.videoRoomName || this.buildVideoRoomName(input.streamId);
+
+    try {
+      const participant = await this.findLiveKitParticipant(roomName, input.userId);
+      return !!participant?.identity;
+    } catch (error) {
+      // LiveKit API failures must not cause destructive ghost cleanup.
+      console.warn("[StreamsService] failed to inspect LiveKit participant during ghost sweep:", {
+        streamId: input.streamId,
+        roomName,
+        userId: input.userId,
+        error,
+      });
+      return true;
+    }
+  }
+
+  private async markParticipantSeen(participantId: string, seenAt = new Date()) {
+    await this.prisma.streamParticipant.update({
+      where: { id: participantId },
+      data: { lastPingAt: seenAt },
+    });
+  }
+
+  private async endGhostHostStream(input: {
+    streamId: string;
+    hostUserId: string;
+    videoRoomName?: string | null;
+    endedAt: Date;
+  }) {
+    const roomName = input.videoRoomName || this.buildVideoRoomName(input.streamId);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.stream.update({
+        where: { id: input.streamId },
+        data: {
+          status: "ENDED",
+          endedAt: input.endedAt,
+          endedByAdminUserId: null,
+          endReason: "HOST_DISCONNECTED",
+        } as any,
+      });
+
+      await tx.streamParticipant.updateMany({
+        where: { streamId: input.streamId, leftAt: null },
+        data: { leftAt: input.endedAt },
+      });
+    });
+
+    const payload = {
+      streamId: input.streamId,
+      hostUserId: input.hostUserId,
+      status: "ENDED",
+      endedAt: input.endedAt.toISOString(),
+      endedByAdmin: false,
+      endedByAdminUserId: null,
+      endReason: "HOST_DISCONNECTED",
+    };
+
+    this.realtime.emitStreamEnded(payload);
+    this.realtime.emitStreamStateUpdated(payload);
+    this.queueLiveKitRoomTeardown(roomName);
   }
 
   async disconnectLiveKitParticipantFromStream(streamId: string, userId: string) {
@@ -2804,6 +2911,7 @@ export class StreamsService {
             id: true,
             status: true,
             hostUserId: true,
+            videoRoomName: true,
           },
         },
       },
@@ -2819,24 +2927,50 @@ export class StreamsService {
       }
 
       if (ghost.role === "HOST") {
-        // Do not auto-end a live stream only because the mobile host stopped pinging.
-        // Android background/home-screen state can pause JS timers and network pings,
-        // so heartbeat timeout is not a reliable signal that the host intentionally ended
-        // the stream or fully killed the app. Explicit host endStream remains the source
-        // of truth for ending a live stream.
-        if (ghost.stream.hostUserId !== ghost.userId) {
-          await this.prisma.streamParticipant.update({
-            where: { id: ghost.id },
-            data: { leftAt: new Date() },
+        const liveKitConnected = await this.isLiveKitParticipantConnectedForSweep({
+          streamId: ghost.streamId,
+          videoRoomName: (ghost.stream as any)?.videoRoomName ?? null,
+          userId: ghost.userId,
+        });
+
+        if (liveKitConnected) {
+          await this.markParticipantSeen(ghost.id);
+          continue;
+        }
+
+        if (ghost.stream.hostUserId === ghost.userId) {
+          await this.endGhostHostStream({
+            streamId: ghost.streamId,
+            hostUserId: ghost.userId,
+            videoRoomName: (ghost.stream as any)?.videoRoomName ?? null,
+            endedAt: new Date(),
           });
 
           sweptCount++;
+          continue;
         }
 
+        await this.prisma.streamParticipant.update({
+          where: { id: ghost.id },
+          data: { leftAt: new Date() },
+        });
+
+        sweptCount++;
         continue;
       }
 
       if (ghost.role === "GUEST") {
+        const liveKitConnected = await this.isLiveKitParticipantConnectedForSweep({
+          streamId: ghost.streamId,
+          videoRoomName: (ghost.stream as any)?.videoRoomName ?? null,
+          userId: ghost.userId,
+        });
+
+        if (liveKitConnected) {
+          await this.markParticipantSeen(ghost.id);
+          continue;
+        }
+
         await this.prisma.streamParticipant.update({
           where: { id: ghost.id },
           data: {
@@ -2844,6 +2978,8 @@ export class StreamsService {
             leftAt: new Date(),
           },
         });
+
+        this.clearGuestMediaState(ghost.streamId, ghost.userId);
 
         const refreshedStream = await this.requireStream(ghost.streamId).catch(() => null);
 
