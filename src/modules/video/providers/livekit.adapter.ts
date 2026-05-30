@@ -18,6 +18,9 @@ export class LiveKitAdapter implements VideoProviderAdapter {
     identity: string;
     role: VideoRole;
     roomName: string;
+    canPublish?: boolean;
+    canPublishData?: boolean;
+    metadata?: Record<string, unknown>;
   }): Promise<VideoTokenResponse> {
     const { identity, role, roomName } = params;
 
@@ -25,12 +28,23 @@ export class LiveKitAdapter implements VideoProviderAdapter {
       throw new ServiceUnavailableException("LiveKit is not configured");
     }
 
-    const canPublish = role === "HOST" || role === "GUEST" || role === "MODERATOR";
+    const canPublish =
+      typeof params.canPublish === "boolean"
+        ? params.canPublish
+        : role === "HOST" || role === "GUEST" || role === "MODERATOR";
+
+    const canPublishData =
+      typeof params.canPublishData === "boolean" ? params.canPublishData : canPublish;
 
     const at = new AccessToken(this.apiKey, this.apiSecret, {
       identity,
       name: identity,
-      metadata: JSON.stringify({ role, userId: params.userId, streamId: params.streamId }),
+      metadata: JSON.stringify({
+        role,
+        userId: params.userId,
+        streamId: params.streamId,
+        ...(params.metadata ?? {}),
+      }),
     });
 
     at.addGrant({
@@ -38,7 +52,7 @@ export class LiveKitAdapter implements VideoProviderAdapter {
       roomJoin: true,
       canPublish,
       canSubscribe: true,
-      canPublishData: canPublish,
+      canPublishData,
     });
 
     const token = await at.toJwt();
@@ -48,6 +62,10 @@ export class LiveKitAdapter implements VideoProviderAdapter {
       url: this.url,
       roomName,
       provider: "LIVEKIT",
+      identity,
+      role,
+      canPublish,
+      canPublishData,
     };
   }
 }

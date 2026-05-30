@@ -419,6 +419,24 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
     return `user:${userId}`;
   }
 
+  private normalizeDeviceSessionId(value: unknown, userId: string): string {
+    const raw = String(value ?? "").trim();
+    const safe = raw.replace(/[^a-zA-Z0-9._:-]/g, "").slice(0, 120);
+    return safe || `legacy-${String(userId || "unknown").slice(0, 8)}`;
+  }
+
+  private buildLiveKitPublisherIdentity(streamId: string, userId: string, deviceSessionId: string): string {
+    return `stream-publisher:${streamId}:${userId}:${deviceSessionId}`;
+  }
+
+  private buildLiveKitOwnerViewerIdentity(streamId: string, userId: string, deviceSessionId: string): string {
+    return `stream-owner-viewer:${streamId}:${userId}:${deviceSessionId}`;
+  }
+
+  private buildPublisherSessionId(streamId: string, userId: string, deviceSessionId: string): string {
+    return `${streamId}:${userId}:${deviceSessionId}`;
+  }
+
   private buildVideoRoomName(streamId: string): string {
     return `stream-${streamId}`;
   }
@@ -749,13 +767,20 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
     streamId: string,
     userId: string,
     role: StreamRole,
+    options: { deviceSessionId?: string } = {},
   ): Promise<VideoTokenResponse> {
-    const stream = await this.prisma.stream.findUnique({
+    const stream = await (this.prisma as any).stream.findUnique({
       where: { id: streamId },
       select: {
         id: true,
         videoRoomName: true,
         videoProvider: true,
+        activePublisherUserId: true,
+        activePublisherDeviceId: true,
+        activePublisherIdentity: true,
+        activePublisherSessionId: true,
+        activePublisherTokenVersion: true,
+        activePublisherTransferredAt: true,
       },
     });
 
@@ -764,9 +789,73 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
     }
 
     const roomName = stream.videoRoomName || this.buildVideoRoomName(streamId);
+    const isStreamOwner = role === "HOST";
+    const deviceSessionId = this.normalizeDeviceSessionId(options.deviceSessionId, userId);
 
-    if (!stream.videoRoomName || !stream.videoProvider) {
-      this.prisma.stream
+    const previousPublisher = stream.activePublisherIdentity
+      ? {
+          userId: stream.activePublisherUserId ?? null,
+          deviceSessionId: stream.activePublisherDeviceId ?? null,
+          participantIdentity: stream.activePublisherIdentity ?? null,
+          sessionId: stream.activePublisherSessionId ?? null,
+          tokenVersion: Number(stream.activePublisherTokenVersion ?? 0),
+          transferredAt:
+            stream.activePublisherTransferredAt instanceof Date
+              ? stream.activePublisherTransferredAt.toISOString()
+              : stream.activePublisherTransferredAt ?? null,
+        }
+      : null;
+
+    const ownerHasDifferentActivePublisher =
+      isStreamOwner &&
+      !!previousPublisher?.deviceSessionId &&
+      previousPublisher.deviceSessionId !== deviceSessionId;
+
+    const joinMode = isStreamOwner
+      ? ownerHasDifferentActivePublisher
+        ? "owner_viewer"
+        : "publisher"
+      : "viewer";
+
+    const ownerPromptRequired = ownerHasDifferentActivePublisher;
+    const tokenRole = ownerHasDifferentActivePublisher ? "VIEWER" : role;
+    const identity = isStreamOwner
+      ? ownerHasDifferentActivePublisher
+        ? this.buildLiveKitOwnerViewerIdentity(streamId, userId, deviceSessionId)
+        : this.buildLiveKitPublisherIdentity(streamId, userId, deviceSessionId)
+      : this.buildLiveKitIdentity(userId);
+
+    let activePublisher = previousPublisher;
+
+    if (isStreamOwner && !ownerPromptRequired) {
+      const nextTokenVersion = Number(stream.activePublisherTokenVersion ?? 0) + 1;
+      const transferredAt = new Date();
+      const sessionId = this.buildPublisherSessionId(streamId, userId, deviceSessionId);
+
+      await (this.prisma as any).stream.update({
+        where: { id: streamId },
+        data: {
+          videoProvider: "LIVEKIT",
+          videoRoomName: roomName,
+          activePublisherUserId: userId,
+          activePublisherDeviceId: deviceSessionId,
+          activePublisherIdentity: identity,
+          activePublisherSessionId: sessionId,
+          activePublisherTokenVersion: nextTokenVersion,
+          activePublisherTransferredAt: transferredAt,
+        },
+      });
+
+      activePublisher = {
+        userId,
+        deviceSessionId,
+        participantIdentity: identity,
+        sessionId,
+        tokenVersion: nextTokenVersion,
+        transferredAt: transferredAt.toISOString(),
+      };
+    } else if (!stream.videoRoomName || !stream.videoProvider) {
+      (this.prisma as any).stream
         .update({
           where: { id: streamId },
           data: {
@@ -774,18 +863,37 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
             videoRoomName: roomName,
           },
         })
-        .catch((err) => console.error("Non-critical stream update failed:", err));
+        .catch((err: unknown) => console.error("Non-critical stream update failed:", err));
     }
 
     const adapter = this.getLiveKitAdapter();
 
-    return adapter.getToken({
+    const tokenResponse = await adapter.getToken({
       streamId,
       userId,
-      identity: this.buildLiveKitIdentity(userId),
-      role: role as any,
+      identity,
+      role: tokenRole as any,
       roomName,
+      canPublish: ownerPromptRequired ? false : undefined,
+      canPublishData: ownerPromptRequired ? false : undefined,
+      metadata: {
+        joinMode,
+        deviceSessionId: isStreamOwner ? deviceSessionId : null,
+        isStreamOwner,
+        ownerPromptRequired,
+        activePublisher,
+      },
     });
+
+    return {
+      ...tokenResponse,
+      identity,
+      role: tokenRole as any,
+      joinMode,
+      isStreamOwner,
+      ownerPromptRequired,
+      activePublisher: activePublisher as any,
+    };
   }
 
   private normalizeEndReason(reason?: string): string | null {
@@ -1234,9 +1342,12 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
     layoutGridSize?: number;
     streamGoal?: number;
     isAudioOnly?: boolean;
+    deviceSessionId?: string;
   }) {
     const stream = await this.createStream(params);
-    const video = await this.issueStreamTokenForRole(stream.id, params.hostUserId, "HOST");
+    const video = await this.issueStreamTokenForRole(stream.id, params.hostUserId, "HOST", {
+      deviceSessionId: params.deviceSessionId,
+    });
 
     return {
       ok: true,
@@ -1245,11 +1356,17 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  async joinAndIssueVideoToken(streamId: string, userId: string) {
+  async joinAndIssueVideoToken(
+    streamId: string,
+    userId: string,
+    options: { deviceSessionId?: string } = {},
+  ) {
     const joinResult = await this.join(streamId, userId);
     const [stream, video] = await Promise.all([
       this.getStream(streamId),
-      this.issueStreamTokenForRole(streamId, userId, joinResult.role),
+      this.issueStreamTokenForRole(streamId, userId, joinResult.role, {
+        deviceSessionId: options.deviceSessionId,
+      }),
     ]);
 
     return {
