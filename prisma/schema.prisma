@@ -1236,7 +1236,7 @@ model Stream {
   activePublisherUserId        String?   @map("active_publisher_user_id") @db.Uuid
   activePublisherDeviceId      String?   @map("active_publisher_device_id") @db.VarChar(120)
   activePublisherIdentity      String?   @map("active_publisher_identity") @db.VarChar(255)
-  activePublisherSessionId     String?   @map("active_publisher_session_id") @db.VarChar(160)
+  activePublisherSessionId     String?   @map("active_publisher_session_id") @db.VarChar(220)
   activePublisherTokenVersion  Int       @default(0) @map("active_publisher_token_version")
   activePublisherTransferredAt DateTime? @map("active_publisher_transferred_at")
 

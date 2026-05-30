@@ -429,6 +429,10 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
     return `stream-publisher:${streamId}:${userId}:${deviceSessionId}`;
   }
 
+  private buildLiveKitOwnerViewerIdentity(streamId: string, userId: string, deviceSessionId: string): string {
+    return `stream-owner-viewer:${streamId}:${userId}:${deviceSessionId}`;
+  }
+
   private buildPublisherSessionId(streamId: string, userId: string, deviceSessionId: string): string {
     return `${streamId}:${userId}:${deviceSessionId}`;
   }
@@ -771,7 +775,12 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
         id: true,
         videoRoomName: true,
         videoProvider: true,
+        activePublisherUserId: true,
+        activePublisherDeviceId: true,
+        activePublisherIdentity: true,
+        activePublisherSessionId: true,
         activePublisherTokenVersion: true,
+        activePublisherTransferredAt: true,
       },
     });
 
@@ -780,32 +789,78 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
     }
 
     const roomName = stream.videoRoomName || this.buildVideoRoomName(streamId);
-    const isHostPublisher = role === "HOST";
+    const isStreamOwner = role === "HOST";
     const deviceSessionId = this.normalizeDeviceSessionId(options.deviceSessionId, userId);
-    const identity = isHostPublisher
-      ? this.buildLiveKitPublisherIdentity(streamId, userId, deviceSessionId)
+
+    const previousPublisher = stream.activePublisherIdentity
+      ? {
+          userId: stream.activePublisherUserId ?? null,
+          deviceSessionId: stream.activePublisherDeviceId ?? null,
+          participantIdentity: stream.activePublisherIdentity ?? null,
+          sessionId: stream.activePublisherSessionId ?? null,
+          tokenVersion: Number(stream.activePublisherTokenVersion ?? 0),
+          transferredAt:
+            stream.activePublisherTransferredAt instanceof Date
+              ? stream.activePublisherTransferredAt.toISOString()
+              : stream.activePublisherTransferredAt ?? null,
+        }
+      : null;
+
+    const ownerHasDifferentActivePublisher =
+      isStreamOwner &&
+      !!previousPublisher?.deviceSessionId &&
+      previousPublisher.deviceSessionId !== deviceSessionId;
+
+    const joinMode = isStreamOwner
+      ? ownerHasDifferentActivePublisher
+        ? "owner_viewer"
+        : "publisher"
+      : "viewer";
+
+    const ownerPromptRequired = ownerHasDifferentActivePublisher;
+    const tokenRole = ownerHasDifferentActivePublisher ? "VIEWER" : role;
+    const identity = isStreamOwner
+      ? ownerHasDifferentActivePublisher
+        ? this.buildLiveKitOwnerViewerIdentity(streamId, userId, deviceSessionId)
+        : this.buildLiveKitPublisherIdentity(streamId, userId, deviceSessionId)
       : this.buildLiveKitIdentity(userId);
 
-    if (!stream.videoRoomName || !stream.videoProvider || isHostPublisher) {
+    let activePublisher = previousPublisher;
+
+    if (isStreamOwner && !ownerPromptRequired) {
       const nextTokenVersion = Number(stream.activePublisherTokenVersion ?? 0) + 1;
       const transferredAt = new Date();
+      const sessionId = this.buildPublisherSessionId(streamId, userId, deviceSessionId);
 
+      await (this.prisma as any).stream.update({
+        where: { id: streamId },
+        data: {
+          videoProvider: "LIVEKIT",
+          videoRoomName: roomName,
+          activePublisherUserId: userId,
+          activePublisherDeviceId: deviceSessionId,
+          activePublisherIdentity: identity,
+          activePublisherSessionId: sessionId,
+          activePublisherTokenVersion: nextTokenVersion,
+          activePublisherTransferredAt: transferredAt,
+        },
+      });
+
+      activePublisher = {
+        userId,
+        deviceSessionId,
+        participantIdentity: identity,
+        sessionId,
+        tokenVersion: nextTokenVersion,
+        transferredAt: transferredAt.toISOString(),
+      };
+    } else if (!stream.videoRoomName || !stream.videoProvider) {
       (this.prisma as any).stream
         .update({
           where: { id: streamId },
           data: {
             videoProvider: "LIVEKIT",
             videoRoomName: roomName,
-            ...(isHostPublisher
-              ? {
-                  activePublisherUserId: userId,
-                  activePublisherDeviceId: deviceSessionId,
-                  activePublisherIdentity: identity,
-                  activePublisherSessionId: this.buildPublisherSessionId(streamId, userId, deviceSessionId),
-                  activePublisherTokenVersion: nextTokenVersion,
-                  activePublisherTransferredAt: transferredAt,
-                }
-              : {}),
           },
         })
         .catch((err: unknown) => console.error("Non-critical stream update failed:", err));
@@ -813,18 +868,32 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
 
     const adapter = this.getLiveKitAdapter();
 
-    return adapter.getToken({
+    const tokenResponse = await adapter.getToken({
       streamId,
       userId,
       identity,
-      role: role as any,
+      role: tokenRole as any,
       roomName,
+      canPublish: ownerPromptRequired ? false : undefined,
+      canPublishData: ownerPromptRequired ? false : undefined,
       metadata: {
-        joinMode: isHostPublisher ? "publisher" : "viewer",
-        deviceSessionId: isHostPublisher ? deviceSessionId : null,
-        isStreamOwner: isHostPublisher,
+        joinMode,
+        deviceSessionId: isStreamOwner ? deviceSessionId : null,
+        isStreamOwner,
+        ownerPromptRequired,
+        activePublisher,
       },
     });
+
+    return {
+      ...tokenResponse,
+      identity,
+      role: tokenRole as any,
+      joinMode,
+      isStreamOwner,
+      ownerPromptRequired,
+      activePublisher: activePublisher as any,
+    };
   }
 
   private normalizeEndReason(reason?: string): string | null {

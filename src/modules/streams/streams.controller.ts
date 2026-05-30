@@ -4,6 +4,7 @@ import { JwtAuthGuard } from "../auth/jwt/jwt-auth.guard";
 import { StreamsService } from "./streams.service";
 import { CreateStreamDto } from "./dto/create-stream.dto";
 import { UpdateGuestMediaDto } from "./dto/update-guest-media.dto";
+import { StreamStartupDto } from "./dto/stream-startup.dto";
 
 type JwtReq = Request & { user?: { userId: string; username?: string } };
 
@@ -76,7 +77,7 @@ export class StreamsController {
   async startup(
     @Req() req: JwtReq,
     @Param("id") id: string,
-    @Body() body: { deviceSessionId?: string } = {},
+    @Body() body: StreamStartupDto = {},
   ) {
     return this.streams.joinAndIssueVideoToken(id, req.user!.userId, {
       deviceSessionId: body?.deviceSessionId,

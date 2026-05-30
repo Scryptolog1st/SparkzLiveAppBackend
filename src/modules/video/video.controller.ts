@@ -2,6 +2,7 @@ import { Body, Controller, Param, Post, Req, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/jwt/jwt-auth.guard";
 import { VideoService } from "./video.service";
+import { VideoTokenDto } from "./dto/video-token.dto";
 
 type JwtReq = Request & {
   user?: {
@@ -19,12 +20,7 @@ export class VideoController {
   async videoToken(
     @Req() req: JwtReq,
     @Param("id") id: string,
-    @Body()
-    body: {
-      deviceSessionId?: string;
-      joinMode?: "publisher" | "owner_viewer" | "viewer";
-      takeover?: boolean;
-    } = {},
+    @Body() body: VideoTokenDto = {},
   ) {
     return this.video.issueStreamToken({
       streamId: id,
