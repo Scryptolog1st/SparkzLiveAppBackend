@@ -21,6 +21,22 @@ import type { VideoTokenResponse } from "../video/video.types";
 
 type StreamLeaderboardPeriod = "stream" | "daily" | "weekly" | "monthly" | "alltime";
 
+type OwnerControlAction = "camera" | "microphone" | "flipCamera";
+
+type OwnerPublisherMediaState = {
+  streamId: string;
+  hostUserId: string;
+  activePublisherDeviceId?: string | null;
+  activePublisherIdentity?: string | null;
+  cameraEnabled?: boolean | null;
+  microphoneMuted?: boolean | null;
+  updatedAt?: string | null;
+  updatedByUserId?: string | null;
+  updatedByDeviceSessionId?: string | null;
+  commandId?: string | null;
+};
+
+
 const parseMsEnv = (name: string, fallbackMs: number, minMs = 0) => {
   const raw = process.env[name];
   const parsed = raw === undefined || raw === null || String(raw).trim() === ""
@@ -206,6 +222,12 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
     }
   >();
 
+  private readonly ownerPublisherMediaState = new Map<string, OwnerPublisherMediaState>();
+
+  private clearOwnerPublisherMediaState(streamId: string) {
+    this.ownerPublisherMediaState.delete(streamId);
+  }
+
   private guestMediaKey(streamId: string, userId: string) {
     return `${streamId}:${userId}`;
   }
@@ -250,6 +272,92 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
       ...guest,
       isMuted: Boolean(state.isMuted),
       isVideoOff: Boolean(state.isVideoOff),
+    };
+  }
+
+  private normalizeOptionalBoolean(...values: unknown[]): boolean | null {
+    for (const value of values) {
+      if (typeof value === "boolean") return value;
+
+      if (typeof value === "number" && Number.isFinite(value)) {
+        if (value === 1) return true;
+        if (value === 0) return false;
+      }
+
+      const normalized = String(value ?? "").trim().toLowerCase();
+      if (!normalized) continue;
+
+      if (["true", "1", "yes", "on", "enabled", "enable"].includes(normalized)) {
+        return true;
+      }
+
+      if (["false", "0", "no", "off", "disabled", "disable"].includes(normalized)) {
+        return false;
+      }
+    }
+
+    return null;
+  }
+
+  private normalizeOwnerControlAction(value: unknown): OwnerControlAction {
+    const normalized = String(value ?? "").trim().toLowerCase();
+
+    if (["camera", "video", "cam", "toggle_camera", "toggle-video", "camera_toggle"].includes(normalized)) {
+      return "camera";
+    }
+
+    if (["microphone", "mic", "audio", "mute", "toggle_mic", "toggle-audio", "microphone_toggle"].includes(normalized)) {
+      return "microphone";
+    }
+
+    if (["flipcamera", "flip_camera", "flip-camera", "switchcamera", "switch_camera", "switch-camera"].includes(normalized)) {
+      return "flipCamera";
+    }
+
+    throw new BadRequestException("Invalid owner control action");
+  }
+
+  private buildActivePublisherPayload(stream: any) {
+    const activePublisherIdentity = String((stream as any)?.activePublisherIdentity ?? "").trim();
+    const activePublisherDeviceId = String((stream as any)?.activePublisherDeviceId ?? "").trim();
+
+    if (!activePublisherIdentity && !activePublisherDeviceId) {
+      return null;
+    }
+
+    const transferredAt = (stream as any)?.activePublisherTransferredAt;
+
+    return {
+      userId: (stream as any)?.activePublisherUserId ?? stream?.hostUserId ?? null,
+      deviceSessionId: activePublisherDeviceId || null,
+      participantIdentity: activePublisherIdentity || null,
+      sessionId: (stream as any)?.activePublisherSessionId ?? null,
+      tokenVersion: Number((stream as any)?.activePublisherTokenVersion ?? 0),
+      transferredAt:
+        transferredAt instanceof Date
+          ? transferredAt.toISOString()
+          : transferredAt ?? null,
+    };
+  }
+
+  private buildOwnerPublisherMediaStatePayload(stream: any): OwnerPublisherMediaState {
+    const streamId = String(stream?.id ?? stream?.streamId ?? "").trim();
+    const existing = streamId ? this.ownerPublisherMediaState.get(streamId) : undefined;
+    const activePublisher = this.buildActivePublisherPayload(stream);
+
+    return {
+      streamId,
+      hostUserId: String(stream?.hostUserId ?? existing?.hostUserId ?? "").trim(),
+      activePublisherDeviceId:
+        (activePublisher?.deviceSessionId ?? existing?.activePublisherDeviceId) || null,
+      activePublisherIdentity:
+        (activePublisher?.participantIdentity ?? existing?.activePublisherIdentity) || null,
+      cameraEnabled: existing?.cameraEnabled ?? null,
+      microphoneMuted: existing?.microphoneMuted ?? null,
+      updatedAt: existing?.updatedAt ?? null,
+      updatedByUserId: existing?.updatedByUserId ?? null,
+      updatedByDeviceSessionId: existing?.updatedByDeviceSessionId ?? null,
+      commandId: existing?.commandId ?? null,
     };
   }
 
@@ -612,6 +720,8 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
     if (!ended) {
       return false;
     }
+
+    this.clearOwnerPublisherMediaState(input.streamId);
 
     const payload = {
       streamId: input.streamId,
@@ -1153,6 +1263,8 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
       endReason: (stream as any)?.endReason ?? null,
       endedByAdmin: Boolean((stream as any)?.endedByAdminUserId),
       isAudioOnly: Boolean((stream as any)?.isAudioOnly),
+      activePublisher: this.buildActivePublisherPayload(stream),
+      ownerMediaState: this.buildOwnerPublisherMediaStatePayload(stream),
     };
   }
 
@@ -1487,6 +1599,202 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  async sendOwnerControlCommand(streamId: string, actorUserId: string, body: any = {}) {
+    const stream = await this.requireStream(streamId);
+
+    if (stream.status !== "LIVE") {
+      throw new BadRequestException("Stream is not live");
+    }
+
+    if (stream.hostUserId !== actorUserId) {
+      throw new ForbiddenException("Only the stream owner can control owner publisher media");
+    }
+
+    const action = this.normalizeOwnerControlAction(
+      body?.action ?? body?.type ?? body?.command,
+    );
+
+    const actorDeviceSessionId = this.normalizeDeviceSessionId(
+      body?.deviceSessionId ?? body?.actorDeviceSessionId,
+      actorUserId,
+    );
+
+    const targetDeviceSessionId = String(
+      body?.targetDeviceSessionId ??
+      body?.activePublisherDeviceId ??
+      (stream as any)?.activePublisherDeviceId ??
+      "",
+    ).trim() || null;
+
+    const requestedCameraEnabled = this.normalizeOptionalBoolean(
+      body?.cameraEnabled,
+      body?.isCameraEnabled,
+      body?.videoEnabled,
+      body?.isVideoEnabled,
+      action === "camera" ? body?.enabled : undefined,
+    );
+
+    const requestedCameraOff = this.normalizeOptionalBoolean(
+      body?.cameraOff,
+      body?.isCameraOff,
+      body?.videoOff,
+      body?.isVideoOff,
+    );
+
+    const cameraEnabled =
+      requestedCameraEnabled !== null
+        ? requestedCameraEnabled
+        : requestedCameraOff !== null
+          ? !requestedCameraOff
+          : null;
+
+    const requestedMicrophoneMuted = this.normalizeOptionalBoolean(
+      body?.microphoneMuted,
+      body?.isMicrophoneMuted,
+      body?.audioMuted,
+      body?.isMuted,
+      body?.muted,
+    );
+
+    const requestedMicrophoneEnabled = this.normalizeOptionalBoolean(
+      body?.microphoneEnabled,
+      body?.isMicrophoneEnabled,
+      body?.audioEnabled,
+      body?.isAudioEnabled,
+      action === "microphone" ? body?.enabled : undefined,
+    );
+
+    const microphoneMuted =
+      requestedMicrophoneMuted !== null
+        ? requestedMicrophoneMuted
+        : requestedMicrophoneEnabled !== null
+          ? !requestedMicrophoneEnabled
+          : null;
+
+    const commandId = String(
+      body?.commandId ??
+      `owner-control-${streamId}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    ).trim();
+
+    const command = {
+      id: commandId,
+      commandId,
+      streamId,
+      hostUserId: stream.hostUserId,
+      actorUserId,
+      actorDeviceSessionId,
+      targetDeviceSessionId,
+      activePublisher: this.buildActivePublisherPayload(stream),
+      action,
+      cameraEnabled,
+      microphoneMuted,
+      createdAt: new Date().toISOString(),
+    };
+
+    this.realtime.emitOwnerControlCommand(command);
+
+    return {
+      ok: true,
+      command,
+      ownerMediaState: this.buildOwnerPublisherMediaStatePayload(stream),
+    };
+  }
+
+  async reportOwnerControlState(streamId: string, actorUserId: string, body: any = {}) {
+    const stream = await this.requireStream(streamId);
+
+    if (stream.hostUserId !== actorUserId) {
+      throw new ForbiddenException("Only the stream owner can report owner publisher media state");
+    }
+
+    if (stream.status !== "LIVE") {
+      throw new BadRequestException("Stream is not live");
+    }
+
+    const existing = this.ownerPublisherMediaState.get(streamId);
+
+    const reportedDeviceSessionId = this.normalizeDeviceSessionId(
+      body?.deviceSessionId ??
+      body?.publisherDeviceSessionId ??
+      body?.activePublisherDeviceId ??
+      existing?.updatedByDeviceSessionId ??
+      (stream as any)?.activePublisherDeviceId,
+      actorUserId,
+    );
+
+    const cameraEnabledInput = this.normalizeOptionalBoolean(
+      body?.cameraEnabled,
+      body?.isCameraEnabled,
+      body?.videoEnabled,
+      body?.isVideoEnabled,
+    );
+
+    const cameraOffInput = this.normalizeOptionalBoolean(
+      body?.cameraOff,
+      body?.isCameraOff,
+      body?.videoOff,
+      body?.isVideoOff,
+    );
+
+    const microphoneMutedInput = this.normalizeOptionalBoolean(
+      body?.microphoneMuted,
+      body?.isMicrophoneMuted,
+      body?.audioMuted,
+      body?.isMuted,
+      body?.muted,
+    );
+
+    const microphoneEnabledInput = this.normalizeOptionalBoolean(
+      body?.microphoneEnabled,
+      body?.isMicrophoneEnabled,
+      body?.audioEnabled,
+      body?.isAudioEnabled,
+    );
+
+    const cameraEnabled =
+      cameraEnabledInput !== null
+        ? cameraEnabledInput
+        : cameraOffInput !== null
+          ? !cameraOffInput
+          : existing?.cameraEnabled ?? null;
+
+    const microphoneMuted =
+      microphoneMutedInput !== null
+        ? microphoneMutedInput
+        : microphoneEnabledInput !== null
+          ? !microphoneEnabledInput
+          : existing?.microphoneMuted ?? null;
+
+    const nextState: OwnerPublisherMediaState = {
+      streamId,
+      hostUserId: stream.hostUserId,
+      activePublisherDeviceId:
+        String(body?.activePublisherDeviceId ?? (stream as any)?.activePublisherDeviceId ?? reportedDeviceSessionId).trim() || null,
+      activePublisherIdentity:
+        String(body?.activePublisherIdentity ?? (stream as any)?.activePublisherIdentity ?? "").trim() || null,
+      cameraEnabled,
+      microphoneMuted,
+      updatedAt: new Date().toISOString(),
+      updatedByUserId: actorUserId,
+      updatedByDeviceSessionId: reportedDeviceSessionId,
+      commandId: String(body?.commandId ?? body?.lastCommandId ?? existing?.commandId ?? "").trim() || null,
+    };
+
+    this.ownerPublisherMediaState.set(streamId, nextState);
+
+    const payload = this.buildOwnerPublisherMediaStatePayload({
+      ...(stream as any),
+      id: streamId,
+    });
+
+    this.realtime.emitOwnerControlState(payload);
+
+    return {
+      ok: true,
+      ownerMediaState: payload,
+    };
+  }
+
   async updateAudioMode(streamId: string, actorUserId: string, isAudioOnly: boolean) {
     const stream = await this.requireStream(streamId);
     const actorStaffState = await this.streamStaff.getMyState(streamId, actorUserId);
@@ -1670,6 +1978,8 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
       endReason: (stream as any)?.endReason ?? null,
       endedByAdmin: Boolean((stream as any)?.endedByAdminUserId),
       isAudioOnly: Boolean((stream as any)?.isAudioOnly),
+      activePublisher: this.buildActivePublisherPayload(stream),
+      ownerMediaState: this.buildOwnerPublisherMediaStatePayload(stream),
     };
   }
 
@@ -2374,6 +2684,7 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
 
     this.realtime.emitStreamEnded(payload);
     this.realtime.emitStreamStateUpdated(payload);
+    this.clearOwnerPublisherMediaState(streamId);
     this.queueLiveKitRoomTeardown(roomName);
 
     return { ok: true };
@@ -2450,6 +2761,7 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
       150,
     );
 
+    this.clearOwnerPublisherMediaState(streamId);
     this.queueLiveKitRoomTeardown(roomName);
 
     return { ok: true };
@@ -2502,6 +2814,8 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
       endReason: (stream as any)?.endReason ?? null,
       endedByAdmin: Boolean((stream as any)?.endedByAdminUserId),
       isAudioOnly: Boolean((stream as any)?.isAudioOnly),
+      activePublisher: this.buildActivePublisherPayload(stream),
+      ownerMediaState: this.buildOwnerPublisherMediaStatePayload(stream),
     };
   }
 
