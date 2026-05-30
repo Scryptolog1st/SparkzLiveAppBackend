@@ -224,6 +224,10 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
 
   private readonly ownerPublisherMediaState = new Map<string, OwnerPublisherMediaState>();
 
+  private clearOwnerPublisherMediaState(streamId: string) {
+    this.ownerPublisherMediaState.delete(streamId);
+  }
+
   private guestMediaKey(streamId: string, userId: string) {
     return `${streamId}:${userId}`;
   }
@@ -716,6 +720,8 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
     if (!ended) {
       return false;
     }
+
+    this.clearOwnerPublisherMediaState(input.streamId);
 
     const payload = {
       streamId: input.streamId,
@@ -2678,6 +2684,7 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
 
     this.realtime.emitStreamEnded(payload);
     this.realtime.emitStreamStateUpdated(payload);
+    this.clearOwnerPublisherMediaState(streamId);
     this.queueLiveKitRoomTeardown(roomName);
 
     return { ok: true };
@@ -2754,6 +2761,7 @@ export class StreamsService implements OnModuleInit, OnModuleDestroy {
       150,
     );
 
+    this.clearOwnerPublisherMediaState(streamId);
     this.queueLiveKitRoomTeardown(roomName);
 
     return { ok: true };

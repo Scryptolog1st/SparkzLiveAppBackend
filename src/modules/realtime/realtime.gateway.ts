@@ -203,17 +203,13 @@ export class RealtimeGateway
       occurredAt: new Date().toISOString(),
     };
 
-    let target: any = this.server;
-
-    if (event?.hostUserId) {
-      target = target.to(`user:${event.hostUserId}`);
+    if (!event?.hostUserId) {
+      return;
     }
 
-    if (event?.streamId) {
-      target = target.to(this.room(event.streamId));
-    }
-
-    target.emit("stream.owner-control.command", event);
+    this.server
+      .to(`user:${event.hostUserId}`)
+      .emit("stream.owner-control.command", event);
   }
 
   emitOwnerControlState(payload: any) {
@@ -222,17 +218,13 @@ export class RealtimeGateway
       occurredAt: new Date().toISOString(),
     };
 
-    let target: any = this.server;
-
-    if (event?.hostUserId) {
-      target = target.to(`user:${event.hostUserId}`);
+    if (!event?.hostUserId) {
+      return;
     }
 
-    if (event?.streamId) {
-      target = target.to(this.room(event.streamId));
-    }
-
-    target.emit("stream.owner-control.state", event);
+    this.server
+      .to(`user:${event.hostUserId}`)
+      .emit("stream.owner-control.state", event);
   }
 
   private writeRealtimeLog(params: {
