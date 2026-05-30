@@ -197,6 +197,44 @@ export class RealtimeGateway
     }
   }
 
+  emitOwnerControlCommand(payload: any) {
+    const event = {
+      ...payload,
+      occurredAt: new Date().toISOString(),
+    };
+
+    let target: any = this.server;
+
+    if (event?.hostUserId) {
+      target = target.to(`user:${event.hostUserId}`);
+    }
+
+    if (event?.streamId) {
+      target = target.to(this.room(event.streamId));
+    }
+
+    target.emit("stream.owner-control.command", event);
+  }
+
+  emitOwnerControlState(payload: any) {
+    const event = {
+      ...payload,
+      occurredAt: new Date().toISOString(),
+    };
+
+    let target: any = this.server;
+
+    if (event?.hostUserId) {
+      target = target.to(`user:${event.hostUserId}`);
+    }
+
+    if (event?.streamId) {
+      target = target.to(this.room(event.streamId));
+    }
+
+    target.emit("stream.owner-control.state", event);
+  }
+
   private writeRealtimeLog(params: {
     level: "WARN" | "ERROR";
     category: string;

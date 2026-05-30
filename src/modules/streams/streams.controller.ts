@@ -37,6 +37,26 @@ export class StreamsController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post("/streams/:id/owner-control")
+  async sendOwnerControlCommand(
+    @Req() req: JwtReq,
+    @Param("id") id: string,
+    @Body() body: any = {},
+  ) {
+    return this.streams.sendOwnerControlCommand(id, req.user!.userId, body);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("/streams/:id/owner-control/state")
+  async reportOwnerControlState(
+    @Req() req: JwtReq,
+    @Param("id") id: string,
+    @Body() body: any = {},
+  ) {
+    return this.streams.reportOwnerControlState(id, req.user!.userId, body);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post("/streams")
   async create(@Req() req: JwtReq, @Body() dto: CreateStreamDto) {
     return this.streams.createStream({
