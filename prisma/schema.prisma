@@ -1233,6 +1233,13 @@ model Stream {
   videoProvider String? @map("video_provider")
   videoRoomName String? @map("video_room_name")
 
+  activePublisherUserId        String?   @map("active_publisher_user_id") @db.Uuid
+  activePublisherDeviceId      String?   @map("active_publisher_device_id") @db.VarChar(120)
+  activePublisherIdentity      String?   @map("active_publisher_identity") @db.VarChar(255)
+  activePublisherSessionId     String?   @map("active_publisher_session_id") @db.VarChar(160)
+  activePublisherTokenVersion  Int       @default(0) @map("active_publisher_token_version")
+  activePublisherTransferredAt DateTime? @map("active_publisher_transferred_at")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -1273,6 +1280,8 @@ model Stream {
   @@index([status])
   @@index([startedAt])
   @@index([endedByAdminUserId])
+  @@index([activePublisherUserId])
+  @@index([activePublisherSessionId])
   @@map("streams")
 }
 

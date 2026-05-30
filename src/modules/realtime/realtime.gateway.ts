@@ -177,6 +177,26 @@ export class RealtimeGateway
     this.server.to(`user:${userId}`).emit(event, payload);
   }
 
+  emitStreamPublisherChanged(payload: {
+    streamId: string;
+    hostUserId: string;
+    activePublisher: Record<string, unknown> | null;
+    previousPublisher?: Record<string, unknown> | null;
+    reason: "INITIAL_PUBLISHER" | "PUBLISHER_TAKEOVER" | "PUBLISHER_REFRESH";
+  }) {
+    const event = {
+      ...payload,
+      occurredAt: new Date().toISOString(),
+    };
+
+    this.server.to(this.room(payload.streamId)).emit("stream.publisher.changed", event);
+    this.server.to(`user:${payload.hostUserId}`).emit("stream.publisher.changed", event);
+
+    if (payload.reason === "PUBLISHER_TAKEOVER") {
+      this.server.to(`user:${payload.hostUserId}`).emit("stream.publisher.takeover", event);
+    }
+  }
+
   private writeRealtimeLog(params: {
     level: "WARN" | "ERROR";
     category: string;

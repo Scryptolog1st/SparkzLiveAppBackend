@@ -16,10 +16,22 @@ export class VideoController {
 
   @UseGuards(JwtAuthGuard)
   @Post("/streams/:id/videoToken")
-  async videoToken(@Req() req: JwtReq, @Param("id") id: string) {
+  async videoToken(
+    @Req() req: JwtReq,
+    @Param("id") id: string,
+    @Body()
+    body: {
+      deviceSessionId?: string;
+      joinMode?: "publisher" | "owner_viewer" | "viewer";
+      takeover?: boolean;
+    } = {},
+  ) {
     return this.video.issueStreamToken({
       streamId: id,
       userId: req.user!.userId,
+      deviceSessionId: body?.deviceSessionId,
+      joinMode: body?.joinMode,
+      takeover: body?.takeover === true,
     });
   }
   @UseGuards(JwtAuthGuard)

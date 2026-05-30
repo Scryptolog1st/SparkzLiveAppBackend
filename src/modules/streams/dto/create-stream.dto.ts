@@ -48,4 +48,9 @@ export class CreateStreamDto {
   @IsOptional()
   @IsString()
   streamCategoryName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  deviceSessionId?: string;
 }

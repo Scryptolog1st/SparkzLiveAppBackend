@@ -49,6 +49,7 @@ export class StreamsController {
       categoryName: dto.categoryName ?? dto.streamCategoryName ?? undefined,
       layoutGridSize: dto.layoutGridSize ?? dto.gridSize,
       isAudioOnly: dto.isAudioOnly,
+      deviceSessionId: dto.deviceSessionId,
     } as any);
   }
 
@@ -66,13 +67,20 @@ export class StreamsController {
       categoryName: dto.categoryName ?? dto.streamCategoryName ?? undefined,
       layoutGridSize: dto.layoutGridSize ?? dto.gridSize,
       isAudioOnly: dto.isAudioOnly,
+      deviceSessionId: dto.deviceSessionId,
     } as any);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post("/streams/:id/startup")
-  async startup(@Req() req: JwtReq, @Param("id") id: string) {
-    return this.streams.joinAndIssueVideoToken(id, req.user!.userId);
+  async startup(
+    @Req() req: JwtReq,
+    @Param("id") id: string,
+    @Body() body: { deviceSessionId?: string } = {},
+  ) {
+    return this.streams.joinAndIssueVideoToken(id, req.user!.userId, {
+      deviceSessionId: body?.deviceSessionId,
+    });
   }
 
   @UseGuards(JwtAuthGuard)
