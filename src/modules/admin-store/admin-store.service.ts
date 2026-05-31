@@ -644,6 +644,7 @@ export class AdminStoreService {
                     profile: {
                         select: {
                             displayName: true,
+                            avatarUrl: true,
                         },
                     },
                     wallet: {
@@ -711,6 +712,11 @@ export class AdminStoreService {
                     username: user.username,
                     email: user.email,
                     displayName: user.profile?.displayName?.trim() || user.username,
+                    avatarUrl: user.profile?.avatarUrl || null,
+                    profile: {
+                        displayName: user.profile?.displayName?.trim() || user.username,
+                        avatarUrl: user.profile?.avatarUrl || null,
+                    },
                     joinedAt: user.createdAt.toISOString(),
                     walletCoins: user.wallet?.coins || 0,
                     lifetimeSpentCents: aggregates?.lifetimeSpentCents || 0,
