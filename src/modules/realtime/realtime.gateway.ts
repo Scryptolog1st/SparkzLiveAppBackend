@@ -1359,7 +1359,27 @@ export class RealtimeGateway
     updatedAt: string;
     reason: "admin_create" | "admin_update" | "admin_delete" | "admin_gift_category_create" | "admin_gift_category_update" | "admin_gift_category_delete";
   }) {
-    this.server.emit("giftCatalog.updated", payload);
+    const event = {
+      type: "giftCatalog.updated",
+      catalog: "gifts",
+      ...payload,
+      occurredAt: new Date().toISOString(),
+    };
+
+    const eventNames = [
+      "giftCatalog.updated",
+      "gift.catalog.updated",
+      "gifts.catalog.updated",
+      "catalog.gifts.changed",
+      "giftCatalogUpdated",
+    ];
+
+    for (const eventName of eventNames) {
+      this.server.emit(eventName, {
+        ...event,
+        type: eventName,
+      });
+    }
   }
 
   emitBattleStarted(payload: any) {

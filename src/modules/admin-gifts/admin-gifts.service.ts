@@ -51,22 +51,44 @@ export class AdminGiftsService {
   ) {}
 
   private async getGiftCatalogMetadata() {
-    const [total, enabled, latest] = await Promise.all([
+    const [
+      total,
+      enabled,
+      latestGift,
+      totalCategories,
+      enabledCategories,
+      latestCategory,
+    ] = await Promise.all([
       this.prisma.gift.count(),
       (this.prisma.gift as any).count({ where: { isEnabled: true } }),
       (this.prisma.gift as any).findFirst({
         orderBy: { updatedAt: "desc" },
         select: { updatedAt: true },
       }),
+      (this.prisma as any).giftCategory.count(),
+      (this.prisma as any).giftCategory.count({ where: { isEnabled: true } }),
+      (this.prisma as any).giftCategory.findFirst({
+        orderBy: { updatedAt: "desc" },
+        select: { updatedAt: true },
+      }),
     ]);
 
-    const updatedAt =
-      latest?.updatedAt instanceof Date
-        ? latest.updatedAt.toISOString()
-        : new Date(0).toISOString();
+    const latestTimes = [latestGift?.updatedAt, latestCategory?.updatedAt]
+      .filter((value): value is Date => value instanceof Date)
+      .map((value) => value.getTime());
+
+    const updatedAt = latestTimes.length > 0
+      ? new Date(Math.max(...latestTimes)).toISOString()
+      : new Date(0).toISOString();
 
     return {
-      version: `${updatedAt}:${total}:${enabled}`,
+      version: [
+        updatedAt,
+        `gifts:${total}`,
+        `enabled:${enabled}`,
+        `categories:${totalCategories}`,
+        `enabledCategories:${enabledCategories}`,
+      ].join(":"),
       updatedAt,
     };
   }

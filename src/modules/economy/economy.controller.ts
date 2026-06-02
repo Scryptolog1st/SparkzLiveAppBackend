@@ -1,6 +1,6 @@
 // backend/src/modules/economy/economy.controller.ts
 
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Header, Param, Post, Req, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 
 import { JwtAuthGuard } from "../auth/jwt/jwt-auth.guard";
@@ -14,6 +14,9 @@ export class EconomyController {
   constructor(private readonly economy: EconomyService) { }
 
   @Get("/gifts/catalog")
+  @Header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate")
+  @Header("Pragma", "no-cache")
+  @Header("Expires", "0")
   async catalog() {
     return this.economy.getCatalog();
   }
@@ -44,6 +47,9 @@ export class EconomyController {
   }
 
   @Get("gifts/categories")
+  @Header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate")
+  @Header("Pragma", "no-cache")
+  @Header("Expires", "0")
   getGiftCategories() {
     return this.economy.getPublicGiftCategories();
   }
