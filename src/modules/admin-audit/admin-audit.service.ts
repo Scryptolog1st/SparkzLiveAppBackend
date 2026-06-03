@@ -15,9 +15,12 @@ import {
 import { getAnonymousStaffLabel } from "../admin-users/admin-identity-utils";
 import {
     ADMIN_PERMISSIONS,
+    ALL_ADMIN_PERMISSIONS,
+    getDefaultAdminPermissionsForRole,
     hasAdminPermission,
+    isAdminPermission,
+    type AdminPermission,
 } from "../admin-users/admin-permissions";
-import { AdminRolePermissionsService } from "../admin-users/admin-role-permissions.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AdminAuditQueryDto } from "./dto/admin-audit-query.dto";
 
@@ -67,10 +70,7 @@ export type AdminAuditLogWriteInput = {
 
 @Injectable()
 export class AdminAuditService {
-    constructor(
-        private readonly prisma: PrismaService,
-        private readonly adminRolePermissions: AdminRolePermissionsService,
-    ) { }
+    constructor(private readonly prisma: PrismaService) { }
 
     private readonly actionTypes = Object.values(AdminAuditActionType);
     private readonly statuses = Object.values(AdminAuditStatus);
@@ -103,8 +103,31 @@ export class AdminAuditService {
         return normalized ? normalized : null;
     }
 
+    private async getEffectivePermissions(role: AdminRole): Promise<AdminPermission[]> {
+        if (role === "SUPER_ADMIN") {
+            return ALL_ADMIN_PERMISSIONS;
+        }
+
+        const rows = await this.prisma.adminRolePermission.findMany({
+            where: { role },
+            select: {
+                permission: true,
+                enabled: true,
+            },
+        });
+
+        if (!rows.length) {
+            return getDefaultAdminPermissionsForRole(role);
+        }
+
+        return rows
+            .filter((row) => row.enabled)
+            .map((row) => row.permission)
+            .filter((value): value is AdminPermission => isAdminPermission(value));
+    }
+
     private async canViewRealAuditStaffIdentity(role: AdminRole) {
-        const permissions = await this.adminRolePermissions.getEffectivePermissions(role);
+        const permissions = await this.getEffectivePermissions(role);
 
         return (
             hasAdminPermission(
