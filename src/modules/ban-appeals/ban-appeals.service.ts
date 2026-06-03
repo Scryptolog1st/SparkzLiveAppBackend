@@ -16,6 +16,7 @@ import {
 import * as bcrypt from "bcryptjs";
 
 import { AdminAuditService } from "../admin-audit/admin-audit.service";
+import { getAnonymousStaffLabel } from "../admin-users/admin-identity-utils";
 import {
   ADMIN_PERMISSIONS,
   hasAdminPermission,
@@ -104,35 +105,6 @@ export class BanAppealsService {
     }
 
     return true;
-  }
-
-  private getAdminRoleLabel(role?: AdminRole | string | null) {
-    switch (role) {
-      case "SUPER_ADMIN":
-        return "Super Admin Agent";
-      case "ADMIN":
-        return "Admin Agent";
-      case "MODERATOR":
-        return "Moderator Agent";
-      case "ANALYST":
-        return "Analyst Agent";
-      default:
-        return "Staff Agent";
-    }
-  }
-
-  private getAnonymousStaffSuffix(id?: string | null) {
-    const normalized = String(id || "").replace(/[^a-zA-Z0-9]/g, "");
-
-    if (!normalized) {
-      return "UNKNOWN";
-    }
-
-    return normalized.slice(-6).toUpperCase();
-  }
-
-  private getAnonymousStaffLabel(adminUser: any) {
-    return `${this.getAdminRoleLabel(adminUser?.role)} ${this.getAnonymousStaffSuffix(adminUser?.id)}`;
   }
 
   private async canViewRealBanAppealStaffIdentity(role: AdminRole) {
@@ -241,7 +213,7 @@ export class BanAppealsService {
     if (!adminUser) return null;
 
     if (!canViewRealStaffIdentity) {
-      const anonymousName = this.getAnonymousStaffLabel(adminUser);
+      const anonymousName = getAnonymousStaffLabel(adminUser);
 
       return {
         id: adminUser.id,

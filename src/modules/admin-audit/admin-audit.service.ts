@@ -12,6 +12,7 @@ import {
     Prisma,
 } from "@prisma/client";
 
+import { getAnonymousStaffLabel } from "../admin-users/admin-identity-utils";
 import {
     ADMIN_PERMISSIONS,
     hasAdminPermission,
@@ -102,35 +103,6 @@ export class AdminAuditService {
         return normalized ? normalized : null;
     }
 
-    private getAdminRoleLabel(role?: AdminRole | string | null) {
-        switch (role) {
-            case "SUPER_ADMIN":
-                return "Super Admin Agent";
-            case "ADMIN":
-                return "Admin Agent";
-            case "MODERATOR":
-                return "Moderator Agent";
-            case "ANALYST":
-                return "Analyst Agent";
-            default:
-                return "Staff Agent";
-        }
-    }
-
-    private getAnonymousStaffSuffix(id?: string | null) {
-        const normalized = String(id || "").replace(/[^a-zA-Z0-9]/g, "");
-
-        if (!normalized) {
-            return "UNKNOWN";
-        }
-
-        return normalized.slice(-6).toUpperCase();
-    }
-
-    private getAnonymousStaffLabel(input: { id?: string | null; role?: AdminRole | string | null }) {
-        return `${this.getAdminRoleLabel(input.role)} ${this.getAnonymousStaffSuffix(input.id)}`;
-    }
-
     private async canViewRealAuditStaffIdentity(role: AdminRole) {
         const permissions = await this.adminRolePermissions.getEffectivePermissions(role);
 
@@ -160,7 +132,7 @@ export class AdminAuditService {
             };
         }
 
-        const anonymousName = this.getAnonymousStaffLabel({
+        const anonymousName = getAnonymousStaffLabel({
             id: row.actorAdminUserId,
             role: row.actorRole,
         });
