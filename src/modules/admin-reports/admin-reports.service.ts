@@ -895,12 +895,27 @@ export class AdminReportsService {
         requestContext?: AdminAuditRequestContext | null,
     ) {
         const actor = await this.requireAdmin(adminUserId);
-        const canViewReportStaffIdentity = await this.canViewReportStaffIdentity(
+        const permissions = await this.adminRolePermissions.getEffectivePermissions(
             actor.role,
         );
-        const canViewAuditStaffIdentity = await this.canViewAuditStaffIdentity(
-            actor.role,
-        );
+        const canViewReportStaffIdentity =
+            hasAdminPermission(
+                permissions,
+                ADMIN_PERMISSIONS.ADMIN_IDENTITY_VIEW_REAL_STAFF,
+            ) ||
+            hasAdminPermission(
+                permissions,
+                ADMIN_PERMISSIONS.REPORTS_IDENTITY_VIEW_REAL_STAFF,
+            );
+        const canViewAuditStaffIdentity =
+            hasAdminPermission(
+                permissions,
+                ADMIN_PERMISSIONS.ADMIN_IDENTITY_VIEW_REAL_STAFF,
+            ) ||
+            hasAdminPermission(
+                permissions,
+                ADMIN_PERMISSIONS.AUDIT_IDENTITY_VIEW_REAL_STAFF,
+            );
 
         const report = await this.prisma.report.findUnique({
             where: { id },
