@@ -6,6 +6,7 @@ import {
     UnauthorizedException,
 } from "@nestjs/common";
 import {
+    AdminRole,
     Prisma,
     ReportAuditAction,
     ReportReasonCode,
@@ -14,6 +15,11 @@ import {
 } from "@prisma/client";
 
 import { AdminAuditService } from "../admin-audit/admin-audit.service";
+import {
+    ADMIN_PERMISSIONS,
+    hasAdminPermission,
+} from "../admin-users/admin-permissions";
+import { AdminRolePermissionsService } from "../admin-users/admin-role-permissions.service";
 import { PrismaService } from "../prisma/prisma.service";
 import {
     AddAdminReportNoteDto,
@@ -36,6 +42,7 @@ export class AdminReportsService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly adminAudit: AdminAuditService,
+        private readonly adminRolePermissions: AdminRolePermissionsService,
     ) { }
 
     private normalizePage(value: string | number | undefined, fallback: number) {
@@ -166,6 +173,89 @@ export class AdminReportsService {
             | "ESCALATED";
     }
 
+    private getAdminRoleLabel(role?: AdminRole | string | null) {
+        switch (role) {
+            case "SUPER_ADMIN":
+                return "Super Admin Agent";
+            case "ADMIN":
+                return "Admin Agent";
+            case "MODERATOR":
+                return "Moderator Agent";
+            case "ANALYST":
+                return "Analyst Agent";
+            default:
+                return "Staff Agent";
+        }
+    }
+
+    private getAnonymousStaffSuffix(id?: string | null) {
+        const normalized = String(id || "").replace(/[^a-zA-Z0-9]/g, "");
+
+        if (!normalized) {
+            return "UNKNOWN";
+        }
+
+        return normalized.slice(-6).toUpperCase();
+    }
+
+    private getAnonymousStaffLabel(adminUser: any) {
+        return `${this.getAdminRoleLabel(adminUser?.role)} ${this.getAnonymousStaffSuffix(adminUser?.id)}`;
+    }
+
+    private async canViewReportStaffIdentity(role: AdminRole) {
+        const permissions = await this.adminRolePermissions.getEffectivePermissions(role);
+
+        return (
+            hasAdminPermission(
+                permissions,
+                ADMIN_PERMISSIONS.ADMIN_IDENTITY_VIEW_REAL_STAFF,
+            ) ||
+            hasAdminPermission(
+                permissions,
+                ADMIN_PERMISSIONS.REPORTS_IDENTITY_VIEW_REAL_STAFF,
+            )
+        );
+    }
+
+    private async canViewAuditStaffIdentity(role: AdminRole) {
+        const permissions = await this.adminRolePermissions.getEffectivePermissions(role);
+
+        return (
+            hasAdminPermission(
+                permissions,
+                ADMIN_PERMISSIONS.ADMIN_IDENTITY_VIEW_REAL_STAFF,
+            ) ||
+            hasAdminPermission(
+                permissions,
+                ADMIN_PERMISSIONS.AUDIT_IDENTITY_VIEW_REAL_STAFF,
+            )
+        );
+    }
+
+    private matchesAnonymousStaffSearch(adminUser: any, search: string) {
+        const normalizedSearch = String(search || "")
+            .trim()
+            .replace(/\s+/g, " ")
+            .toLowerCase();
+        const tokenSearch = String(search || "")
+            .replace(/[^a-zA-Z0-9]/g, "")
+            .toLowerCase();
+
+        if (!normalizedSearch && !tokenSearch) {
+            return false;
+        }
+
+        const anonymousName = this.getAnonymousStaffLabel(adminUser).toLowerCase();
+        const anonymousSuffix = this.getAnonymousStaffSuffix(adminUser?.id).toLowerCase();
+        const roleLabel = this.getAdminRoleLabel(adminUser?.role).toLowerCase();
+
+        return (
+            anonymousName.includes(normalizedSearch) ||
+            roleLabel.includes(normalizedSearch) ||
+            Boolean(tokenSearch && anonymousSuffix.includes(tokenSearch))
+        );
+    }
+
     private async requireAdmin(adminUserId: string) {
         const adminUser = await this.prisma.adminUser.findUnique({
             where: { id: adminUserId },
@@ -204,17 +294,35 @@ export class AdminReportsService {
         };
     }
 
-    private mapAdminUser(adminUser: any) {
+    private mapAdminUser(adminUser: any, canViewReportStaffIdentity = false) {
         if (!adminUser) {
             return null;
+        }
+
+        if (!canViewReportStaffIdentity) {
+            const anonymousName = this.getAnonymousStaffLabel(adminUser);
+
+            return {
+                id: adminUser.id,
+                email: "hidden",
+                name: anonymousName,
+                displayName: anonymousName,
+                displayEmail: "Hidden",
+                role: adminUser.role,
+                isActive: adminUser.isActive,
+                identityVisibility: "anonymous",
+            };
         }
 
         return {
             id: adminUser.id,
             email: adminUser.email,
             name: adminUser.name,
+            displayName: adminUser.name,
+            displayEmail: adminUser.email,
             role: adminUser.role,
             isActive: adminUser.isActive,
+            identityVisibility: "real",
         };
     }
 
@@ -301,19 +409,19 @@ export class AdminReportsService {
         };
     }
 
-    private mapAuditLog(row: any) {
+    private mapAuditLog(row: any, canViewReportStaffIdentity = false) {
         return {
             id: row.id,
             action: row.action,
             note: row.note ?? null,
             createdAt: row.createdAt.toISOString(),
             actorAdminUser: row.actorAdminUser
-                ? this.mapAdminUser(row.actorAdminUser)
+                ? this.mapAdminUser(row.actorAdminUser, canViewReportStaffIdentity)
                 : null,
         };
     }
 
-    private mapReportListItem(report: any) {
+    private mapReportListItem(report: any, canViewReportStaffIdentity = false) {
         return {
             id: report.id,
             targetType: report.targetType,
@@ -325,7 +433,7 @@ export class AdminReportsService {
             resolvedAt: report.resolvedAt ? report.resolvedAt.toISOString() : null,
             reporter: report.reporter ? this.mapUser(report.reporter) : null,
             assignedAdminUser: report.assignedAdminUser
-                ? this.mapAdminUser(report.assignedAdminUser)
+                ? this.mapAdminUser(report.assignedAdminUser, canViewReportStaffIdentity)
                 : null,
             targetUser: report.targetUser ? this.mapUser(report.targetUser) : null,
             targetStream: report.targetStream ? this.mapStream(report.targetStream) : null,
@@ -438,7 +546,10 @@ export class AdminReportsService {
         adminUserId: string,
         query: SearchAdminReportAssigneesDto = {},
     ) {
-        await this.requireAdmin(adminUserId);
+        const actor = await this.requireAdmin(adminUserId);
+        const canViewReportStaffIdentity = await this.canViewReportStaffIdentity(
+            actor.role,
+        );
 
         const search = String(query.query || "").trim();
 
@@ -449,24 +560,28 @@ export class AdminReportsService {
             };
         }
 
-        const items = await this.prisma.adminUser.findMany({
-            where: {
-                isActive: true,
-                OR: [
-                    {
-                        name: {
-                            contains: search,
-                            mode: "insensitive",
+        const rawItems = await this.prisma.adminUser.findMany({
+            where: canViewReportStaffIdentity
+                ? {
+                    isActive: true,
+                    OR: [
+                        {
+                            name: {
+                                contains: search,
+                                mode: "insensitive",
+                            },
                         },
-                    },
-                    {
-                        email: {
-                            contains: search,
-                            mode: "insensitive",
+                        {
+                            email: {
+                                contains: search,
+                                mode: "insensitive",
+                            },
                         },
-                    },
-                ],
-            },
+                    ],
+                }
+                : {
+                    isActive: true,
+                },
             select: {
                 id: true,
                 email: true,
@@ -474,12 +589,20 @@ export class AdminReportsService {
                 role: true,
                 isActive: true,
             },
-            orderBy: [{ name: "asc" }, { email: "asc" }],
-            take: 10,
+            orderBy: [{ role: "asc" }, { id: "asc" }],
+            take: canViewReportStaffIdentity ? 10 : 250,
         });
 
+        const items = canViewReportStaffIdentity
+            ? rawItems
+            : rawItems
+                .filter((item) => this.matchesAnonymousStaffSearch(item, search))
+                .slice(0, 10);
+
         return {
-            items: items.map((item) => this.mapAdminUser(item)),
+            items: items.map((item) =>
+                this.mapAdminUser(item, canViewReportStaffIdentity),
+            ),
             query: search,
         };
     }
@@ -537,7 +660,10 @@ export class AdminReportsService {
     }
 
     async list(adminUserId: string, query: AdminReportsQueryDto = {}) {
-        await this.requireAdmin(adminUserId);
+        const actor = await this.requireAdmin(adminUserId);
+        const canViewReportStaffIdentity = await this.canViewReportStaffIdentity(
+            actor.role,
+        );
 
         const page = this.normalizePage(query.page, 1);
         const pageSize = this.normalizePageSize(query.pageSize, 20);
@@ -745,7 +871,9 @@ export class AdminReportsService {
         ]);
 
         return {
-            items: items.map((report) => this.mapReportListItem(report)),
+            items: items.map((report) =>
+                this.mapReportListItem(report, canViewReportStaffIdentity),
+            ),
             total,
             page,
             pageSize,
@@ -766,7 +894,28 @@ export class AdminReportsService {
         id: string,
         requestContext?: AdminAuditRequestContext | null,
     ) {
-        await this.requireAdmin(adminUserId);
+        const actor = await this.requireAdmin(adminUserId);
+        const permissions = await this.adminRolePermissions.getEffectivePermissions(
+            actor.role,
+        );
+        const canViewReportStaffIdentity =
+            hasAdminPermission(
+                permissions,
+                ADMIN_PERMISSIONS.ADMIN_IDENTITY_VIEW_REAL_STAFF,
+            ) ||
+            hasAdminPermission(
+                permissions,
+                ADMIN_PERMISSIONS.REPORTS_IDENTITY_VIEW_REAL_STAFF,
+            );
+        const canViewAuditStaffIdentity =
+            hasAdminPermission(
+                permissions,
+                ADMIN_PERMISSIONS.ADMIN_IDENTITY_VIEW_REAL_STAFF,
+            ) ||
+            hasAdminPermission(
+                permissions,
+                ADMIN_PERMISSIONS.AUDIT_IDENTITY_VIEW_REAL_STAFF,
+            );
 
         const report = await this.prisma.report.findUnique({
             where: { id },
@@ -952,15 +1101,19 @@ export class AdminReportsService {
         });
 
         return {
-            item: this.mapReportListItem(report),
+            item: this.mapReportListItem(report, canViewReportStaffIdentity),
             activeRestrictions: activeRestrictions.map((row) =>
                 this.mapRestriction(row),
             ),
             recentModerationActions: recentModerationActions.map((row) =>
                 this.mapModerationAction(row),
             ),
-            auditLog: report.auditLogs.map((row) => this.mapAuditLog(row)),
-            relatedReports: relatedReports.map((row) => this.mapReportListItem(row)),
+            auditLog: report.auditLogs.map((row) =>
+                this.mapAuditLog(row, canViewAuditStaffIdentity),
+            ),
+            relatedReports: relatedReports.map((row) =>
+                this.mapReportListItem(row, canViewReportStaffIdentity),
+            ),
         };
     }
 
@@ -970,7 +1123,10 @@ export class AdminReportsService {
         body: UpdateAdminReportStatusDto,
         requestContext?: AdminAuditRequestContext | null,
     ) {
-        await this.requireAdmin(adminUserId);
+        const actor = await this.requireAdmin(adminUserId);
+        const canViewReportStaffIdentity = await this.canViewReportStaffIdentity(
+            actor.role,
+        );
 
         const nextStatus = this.parseNextStatus(body.status);
 
@@ -1092,7 +1248,7 @@ export class AdminReportsService {
 
         return {
             success: true,
-            item: this.mapReportListItem(updated),
+            item: this.mapReportListItem(updated, canViewReportStaffIdentity),
         };
     }
 
@@ -1102,7 +1258,10 @@ export class AdminReportsService {
         body: AssignAdminReportDto,
         requestContext?: AdminAuditRequestContext | null,
     ) {
-        await this.requireAdmin(adminUserId);
+        const actor = await this.requireAdmin(adminUserId);
+        const canViewReportStaffIdentity = await this.canViewReportStaffIdentity(
+            actor.role,
+        );
 
         if (body.assignedAdminUserId) {
             const assignedAdminUser = await this.prisma.adminUser.findUnique({
@@ -1226,7 +1385,7 @@ export class AdminReportsService {
 
         return {
             success: true,
-            item: this.mapReportListItem(updated),
+            item: this.mapReportListItem(updated, canViewReportStaffIdentity),
         };
     }
 
@@ -1236,7 +1395,10 @@ export class AdminReportsService {
         body: AddAdminReportNoteDto,
         requestContext?: AdminAuditRequestContext | null,
     ) {
-        await this.requireAdmin(adminUserId);
+        const actor = await this.requireAdmin(adminUserId);
+        const canViewReportStaffIdentity = await this.canViewReportStaffIdentity(
+            actor.role,
+        );
 
         const existing = await this.prisma.report.findUnique({
             where: { id },
@@ -1314,7 +1476,7 @@ export class AdminReportsService {
 
         return {
             success: true,
-            item: this.mapReportListItem(existing),
+            item: this.mapReportListItem(existing, canViewReportStaffIdentity),
         };
     }
 
