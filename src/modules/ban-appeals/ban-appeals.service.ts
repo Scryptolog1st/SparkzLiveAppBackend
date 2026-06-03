@@ -216,7 +216,7 @@ export class BanAppealsService {
       const anonymousName = getAnonymousStaffLabel(adminUser);
 
       return {
-        id: adminUser.id,
+        id: null,
         email: "hidden",
         name: anonymousName,
         displayName: anonymousName,
@@ -296,7 +296,9 @@ export class BanAppealsService {
         ? appeal.banExpiresAtSnapshot.toISOString()
         : null,
       banReasonSnapshot: appeal.banReasonSnapshot ?? null,
-      reviewedByAdminUserId: appeal.reviewedByAdminUserId ?? null,
+      reviewedByAdminUserId: canViewRealStaffIdentity
+        ? appeal.reviewedByAdminUserId ?? null
+        : null,
       reviewedAt: appeal.reviewedAt ? appeal.reviewedAt.toISOString() : null,
       createdAt: appeal.createdAt.toISOString(),
       updatedAt: appeal.updatedAt.toISOString(),

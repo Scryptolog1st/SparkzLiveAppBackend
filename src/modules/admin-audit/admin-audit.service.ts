@@ -138,7 +138,7 @@ export class AdminAuditService {
         });
 
         return {
-            id: row.actorAdminUserId,
+            id: null,
             name: anonymousName,
             email: "hidden",
             displayName: anonymousName,
@@ -393,7 +393,7 @@ export class AdminAuditService {
             };
         }
 
-        if (actorId) {
+        if (actorId && canSearchRealStaffIdentity) {
             where.actorAdminUserId = actorId;
         }
 
@@ -557,15 +557,26 @@ export class AdminAuditService {
             metadata: (row.metadataJson as Record<string, unknown> | null) ?? {},
             secondaryIdentifiers:
                 (row.secondaryIdentifiersJson as Record<string, string | null> | null) ?? {},
-            references:
-                (row.referencesJson as Record<string, string | null> | null) ?? {
-                    adminUserId: row.actorAdminUserId,
-                    targetUserId: row.targetUserId ?? null,
-                    targetStreamId: row.targetStreamId ?? null,
-                    targetReportId: row.targetReportId ?? null,
-                    targetPayoutRequestId: row.targetPayoutRequestId ?? null,
-                    targetSupportTicketId: row.targetSupportTicketId ?? null,
-                },
+            references: (() => {
+                const references =
+                    (row.referencesJson as Record<string, string | null> | null) ?? {
+                        adminUserId: row.actorAdminUserId,
+                        targetUserId: row.targetUserId ?? null,
+                        targetStreamId: row.targetStreamId ?? null,
+                        targetReportId: row.targetReportId ?? null,
+                        targetPayoutRequestId: row.targetPayoutRequestId ?? null,
+                        targetSupportTicketId: row.targetSupportTicketId ?? null,
+                    };
+
+                if (!canViewRealStaffIdentity) {
+                    return {
+                        ...references,
+                        adminUserId: null,
+                    };
+                }
+
+                return references;
+            })(),
         };
     }
 
@@ -715,7 +726,9 @@ export class AdminAuditService {
                 sort,
                 timeRange: this.normalizeOptionalString(query.timeRange) ?? "all",
                 action: this.normalizeOptionalString(query.action),
-                actorId: this.normalizeOptionalString(query.actorId),
+                actorId: canViewRealStaffIdentity
+                    ? this.normalizeOptionalString(query.actorId)
+                    : null,
                 resourceId: this.normalizeOptionalString(query.resourceId),
                 targetId: this.normalizeOptionalString(query.targetId),
                 from: this.normalizeOptionalString(query.from),
