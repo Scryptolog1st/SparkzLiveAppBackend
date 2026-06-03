@@ -202,7 +202,22 @@ export class AdminReportsService {
         return `${this.getAdminRoleLabel(adminUser?.role)} ${this.getAnonymousStaffSuffix(adminUser?.id)}`;
     }
 
-    private async canViewRealReportStaffIdentity(role: AdminRole) {
+    private async canViewReportStaffIdentity(role: AdminRole) {
+        const permissions = await this.adminRolePermissions.getEffectivePermissions(role);
+
+        return (
+            hasAdminPermission(
+                permissions,
+                ADMIN_PERMISSIONS.ADMIN_IDENTITY_VIEW_REAL_STAFF,
+            ) ||
+            hasAdminPermission(
+                permissions,
+                ADMIN_PERMISSIONS.REPORTS_IDENTITY_VIEW_REAL_STAFF,
+            )
+        );
+    }
+
+    private async canViewAuditStaffIdentity(role: AdminRole) {
         const permissions = await this.adminRolePermissions.getEffectivePermissions(role);
 
         return (
@@ -213,11 +228,31 @@ export class AdminReportsService {
             hasAdminPermission(
                 permissions,
                 ADMIN_PERMISSIONS.AUDIT_IDENTITY_VIEW_REAL_STAFF,
-            ) ||
-            hasAdminPermission(
-                permissions,
-                ADMIN_PERMISSIONS.REPORTS_IDENTITY_VIEW_REAL_STAFF,
             )
+        );
+    }
+
+    private matchesAnonymousStaffSearch(adminUser: any, search: string) {
+        const normalizedSearch = String(search || "")
+            .trim()
+            .replace(/\s+/g, " ")
+            .toLowerCase();
+        const tokenSearch = String(search || "")
+            .replace(/[^a-zA-Z0-9]/g, "")
+            .toLowerCase();
+
+        if (!normalizedSearch && !tokenSearch) {
+            return false;
+        }
+
+        const anonymousName = this.getAnonymousStaffLabel(adminUser).toLowerCase();
+        const anonymousSuffix = this.getAnonymousStaffSuffix(adminUser?.id).toLowerCase();
+        const roleLabel = this.getAdminRoleLabel(adminUser?.role).toLowerCase();
+
+        return (
+            anonymousName.includes(normalizedSearch) ||
+            roleLabel.includes(normalizedSearch) ||
+            Boolean(tokenSearch && anonymousSuffix.includes(tokenSearch))
         );
     }
 
@@ -259,12 +294,12 @@ export class AdminReportsService {
         };
     }
 
-    private mapAdminUser(adminUser: any, canViewRealStaffIdentity = false) {
+    private mapAdminUser(adminUser: any, canViewReportStaffIdentity = false) {
         if (!adminUser) {
             return null;
         }
 
-        if (!canViewRealStaffIdentity) {
+        if (!canViewReportStaffIdentity) {
             const anonymousName = this.getAnonymousStaffLabel(adminUser);
 
             return {
@@ -374,19 +409,19 @@ export class AdminReportsService {
         };
     }
 
-    private mapAuditLog(row: any, canViewRealStaffIdentity = false) {
+    private mapAuditLog(row: any, canViewReportStaffIdentity = false) {
         return {
             id: row.id,
             action: row.action,
             note: row.note ?? null,
             createdAt: row.createdAt.toISOString(),
             actorAdminUser: row.actorAdminUser
-                ? this.mapAdminUser(row.actorAdminUser, canViewRealStaffIdentity)
+                ? this.mapAdminUser(row.actorAdminUser, canViewReportStaffIdentity)
                 : null,
         };
     }
 
-    private mapReportListItem(report: any, canViewRealStaffIdentity = false) {
+    private mapReportListItem(report: any, canViewReportStaffIdentity = false) {
         return {
             id: report.id,
             targetType: report.targetType,
@@ -398,7 +433,7 @@ export class AdminReportsService {
             resolvedAt: report.resolvedAt ? report.resolvedAt.toISOString() : null,
             reporter: report.reporter ? this.mapUser(report.reporter) : null,
             assignedAdminUser: report.assignedAdminUser
-                ? this.mapAdminUser(report.assignedAdminUser, canViewRealStaffIdentity)
+                ? this.mapAdminUser(report.assignedAdminUser, canViewReportStaffIdentity)
                 : null,
             targetUser: report.targetUser ? this.mapUser(report.targetUser) : null,
             targetStream: report.targetStream ? this.mapStream(report.targetStream) : null,
@@ -512,7 +547,7 @@ export class AdminReportsService {
         query: SearchAdminReportAssigneesDto = {},
     ) {
         const actor = await this.requireAdmin(adminUserId);
-        const canViewRealStaffIdentity = await this.canViewRealReportStaffIdentity(
+        const canViewReportStaffIdentity = await this.canViewReportStaffIdentity(
             actor.role,
         );
 
@@ -525,8 +560,8 @@ export class AdminReportsService {
             };
         }
 
-        const items = await this.prisma.adminUser.findMany({
-            where: canViewRealStaffIdentity
+        const rawItems = await this.prisma.adminUser.findMany({
+            where: canViewReportStaffIdentity
                 ? {
                     isActive: true,
                     OR: [
@@ -555,12 +590,18 @@ export class AdminReportsService {
                 isActive: true,
             },
             orderBy: [{ role: "asc" }, { id: "asc" }],
-            take: 10,
+            take: canViewReportStaffIdentity ? 10 : 250,
         });
+
+        const items = canViewReportStaffIdentity
+            ? rawItems
+            : rawItems
+                .filter((item) => this.matchesAnonymousStaffSearch(item, search))
+                .slice(0, 10);
 
         return {
             items: items.map((item) =>
-                this.mapAdminUser(item, canViewRealStaffIdentity),
+                this.mapAdminUser(item, canViewReportStaffIdentity),
             ),
             query: search,
         };
@@ -620,7 +661,7 @@ export class AdminReportsService {
 
     async list(adminUserId: string, query: AdminReportsQueryDto = {}) {
         const actor = await this.requireAdmin(adminUserId);
-        const canViewRealStaffIdentity = await this.canViewRealReportStaffIdentity(
+        const canViewReportStaffIdentity = await this.canViewReportStaffIdentity(
             actor.role,
         );
 
@@ -831,7 +872,7 @@ export class AdminReportsService {
 
         return {
             items: items.map((report) =>
-                this.mapReportListItem(report, canViewRealStaffIdentity),
+                this.mapReportListItem(report, canViewReportStaffIdentity),
             ),
             total,
             page,
@@ -854,7 +895,10 @@ export class AdminReportsService {
         requestContext?: AdminAuditRequestContext | null,
     ) {
         const actor = await this.requireAdmin(adminUserId);
-        const canViewRealStaffIdentity = await this.canViewRealReportStaffIdentity(
+        const canViewReportStaffIdentity = await this.canViewReportStaffIdentity(
+            actor.role,
+        );
+        const canViewAuditStaffIdentity = await this.canViewAuditStaffIdentity(
             actor.role,
         );
 
@@ -1042,7 +1086,7 @@ export class AdminReportsService {
         });
 
         return {
-            item: this.mapReportListItem(report, canViewRealStaffIdentity),
+            item: this.mapReportListItem(report, canViewReportStaffIdentity),
             activeRestrictions: activeRestrictions.map((row) =>
                 this.mapRestriction(row),
             ),
@@ -1050,10 +1094,10 @@ export class AdminReportsService {
                 this.mapModerationAction(row),
             ),
             auditLog: report.auditLogs.map((row) =>
-                this.mapAuditLog(row, canViewRealStaffIdentity),
+                this.mapAuditLog(row, canViewAuditStaffIdentity),
             ),
             relatedReports: relatedReports.map((row) =>
-                this.mapReportListItem(row, canViewRealStaffIdentity),
+                this.mapReportListItem(row, canViewReportStaffIdentity),
             ),
         };
     }
@@ -1065,7 +1109,7 @@ export class AdminReportsService {
         requestContext?: AdminAuditRequestContext | null,
     ) {
         const actor = await this.requireAdmin(adminUserId);
-        const canViewRealStaffIdentity = await this.canViewRealReportStaffIdentity(
+        const canViewReportStaffIdentity = await this.canViewReportStaffIdentity(
             actor.role,
         );
 
@@ -1189,7 +1233,7 @@ export class AdminReportsService {
 
         return {
             success: true,
-            item: this.mapReportListItem(updated, canViewRealStaffIdentity),
+            item: this.mapReportListItem(updated, canViewReportStaffIdentity),
         };
     }
 
@@ -1200,7 +1244,7 @@ export class AdminReportsService {
         requestContext?: AdminAuditRequestContext | null,
     ) {
         const actor = await this.requireAdmin(adminUserId);
-        const canViewRealStaffIdentity = await this.canViewRealReportStaffIdentity(
+        const canViewReportStaffIdentity = await this.canViewReportStaffIdentity(
             actor.role,
         );
 
@@ -1326,7 +1370,7 @@ export class AdminReportsService {
 
         return {
             success: true,
-            item: this.mapReportListItem(updated, canViewRealStaffIdentity),
+            item: this.mapReportListItem(updated, canViewReportStaffIdentity),
         };
     }
 
@@ -1337,7 +1381,7 @@ export class AdminReportsService {
         requestContext?: AdminAuditRequestContext | null,
     ) {
         const actor = await this.requireAdmin(adminUserId);
-        const canViewRealStaffIdentity = await this.canViewRealReportStaffIdentity(
+        const canViewReportStaffIdentity = await this.canViewReportStaffIdentity(
             actor.role,
         );
 
@@ -1417,7 +1461,7 @@ export class AdminReportsService {
 
         return {
             success: true,
-            item: this.mapReportListItem(existing, canViewRealStaffIdentity),
+            item: this.mapReportListItem(existing, canViewReportStaffIdentity),
         };
     }
 
