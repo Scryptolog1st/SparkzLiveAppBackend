@@ -510,7 +510,9 @@ export class AdminAuditService {
             if (this.isUuid(search)) {
                 searchOr.push(
                     { id: search },
-                    { actorAdminUserId: search },
+                    ...(canSearchRealStaffIdentity
+                        ? [{ actorAdminUserId: search }]
+                        : []),
                     { targetUserId: search },
                     { targetStreamId: search },
                     { targetReportId: search },

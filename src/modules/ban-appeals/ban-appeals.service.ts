@@ -414,7 +414,6 @@ export class BanAppealsService {
       deviceLabel: requestContext.deviceLabel,
       metadata: {
         status: args.appeal.status ?? null,
-        reviewedByAdminUserId: args.appeal.reviewedByAdminUserId ?? null,
         ...(args.metadata || {}),
       },
       beforeState: args.beforeState ?? undefined,
