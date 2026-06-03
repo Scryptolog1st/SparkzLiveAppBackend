@@ -39,6 +39,8 @@ export const ADMIN_PERMISSIONS = {
 
     ADMIN_ACCOUNTS_VIEW: "admin.accounts.view",
     ADMIN_ACCOUNTS_MANAGE: "admin.accounts.manage",
+    ADMIN_IDENTITY_VIEW_REAL_STAFF: "admin.identity.view_real_staff",
+    ADMIN_IDENTITY_MANAGE_REAL_STAFF: "admin.identity.manage_real_staff",
 
     PERMISSIONS_VIEW: "admin.permissions.view",
     PERMISSIONS_MANAGE: "admin.permissions.manage",
@@ -63,6 +65,8 @@ export const ADMIN_PERMISSIONS = {
 
     AUDIT_LOGS_VIEW: "audit.logs.view",
     AUDIT_LOGS_EXPORT: "audit.logs.export",
+    AUDIT_IDENTITY_VIEW_REAL_STAFF: "audit.identity.view_real_staff",
+    REPORTS_IDENTITY_VIEW_REAL_STAFF: "reports.identity.view_real_staff",
 
     EMAIL_SMTP_VIEW: "email.smtp.view",
     EMAIL_SMTP_MANAGE: "email.smtp.manage",
@@ -136,6 +140,8 @@ export const ADMIN_PERMISSION_LABELS: Record<AdminPermission, string> = {
     [ADMIN_PERMISSIONS.USERS_VIEW]: "View users",
     [ADMIN_PERMISSIONS.ADMIN_ACCOUNTS_VIEW]: "View admin accounts",
     [ADMIN_PERMISSIONS.ADMIN_ACCOUNTS_MANAGE]: "Manage admin accounts",
+    [ADMIN_PERMISSIONS.ADMIN_IDENTITY_VIEW_REAL_STAFF]: "View real staff identity",
+    [ADMIN_PERMISSIONS.ADMIN_IDENTITY_MANAGE_REAL_STAFF]: "Manage real staff identity",
     [ADMIN_PERMISSIONS.PERMISSIONS_VIEW]: "View admin permissions",
     [ADMIN_PERMISSIONS.PERMISSIONS_MANAGE]: "Manage admin permissions",
     [ADMIN_PERMISSIONS.ADMIN_ADVERT_VIEW]: "View advertisements",
@@ -152,6 +158,8 @@ export const ADMIN_PERMISSION_LABELS: Record<AdminPermission, string> = {
     [ADMIN_PERMISSIONS.COMPLIANCE_MANAGE]: "Manage compliance",
     [ADMIN_PERMISSIONS.AUDIT_LOGS_VIEW]: "View audit logs",
     [ADMIN_PERMISSIONS.AUDIT_LOGS_EXPORT]: "Export audit logs",
+    [ADMIN_PERMISSIONS.AUDIT_IDENTITY_VIEW_REAL_STAFF]: "View real staff identity in audit logs",
+    [ADMIN_PERMISSIONS.REPORTS_IDENTITY_VIEW_REAL_STAFF]: "View real staff identity in reports",
     [ADMIN_PERMISSIONS.EMAIL_SMTP_VIEW]: "View SMTP accounts",
     [ADMIN_PERMISSIONS.EMAIL_SMTP_MANAGE]: "Manage SMTP accounts",
     [ADMIN_PERMISSIONS.EMAIL_TEMPLATES_VIEW]: "View email templates",
