@@ -7,6 +7,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import {
+  AdminRole,
   BanAppealStatus,
   EmailCategory,
   ModerationActionType,
@@ -15,6 +16,12 @@ import {
 import * as bcrypt from "bcryptjs";
 
 import { AdminAuditService } from "../admin-audit/admin-audit.service";
+import { getAnonymousStaffLabel } from "../admin-users/admin-identity-utils";
+import {
+  ADMIN_PERMISSIONS,
+  hasAdminPermission,
+} from "../admin-users/admin-permissions";
+import { AdminRolePermissionsService } from "../admin-users/admin-role-permissions.service";
 import { EmailService } from "../email/email.service";
 import { ModerationService } from "../moderation/moderation.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -42,6 +49,7 @@ export class BanAppealsService {
     private readonly moderation: ModerationService,
     private readonly email: EmailService,
     private readonly adminAudit: AdminAuditService,
+    private readonly adminRolePermissions: AdminRolePermissionsService,
   ) { }
 
   private normalizePage(value: string | number | undefined, fallback: number) {
@@ -97,6 +105,15 @@ export class BanAppealsService {
     }
 
     return true;
+  }
+
+  private async canViewRealBanAppealStaffIdentity(role: AdminRole) {
+    const permissions = await this.adminRolePermissions.getEffectivePermissions(role);
+
+    return hasAdminPermission(
+      permissions,
+      ADMIN_PERMISSIONS.ADMIN_IDENTITY_VIEW_REAL_STAFF,
+    );
   }
 
   private async requireAdmin(adminUserId: string) {
@@ -192,15 +209,33 @@ export class BanAppealsService {
     return { user, latestBanAction };
   }
 
-  private mapAdminUser(adminUser: any) {
+  private mapAdminUser(adminUser: any, canViewRealStaffIdentity = false) {
     if (!adminUser) return null;
+
+    if (!canViewRealStaffIdentity) {
+      const anonymousName = getAnonymousStaffLabel(adminUser);
+
+      return {
+        id: null,
+        email: "hidden",
+        name: anonymousName,
+        displayName: anonymousName,
+        displayEmail: "Hidden",
+        role: adminUser.role,
+        isActive: adminUser.isActive,
+        identityVisibility: "anonymous",
+      };
+    }
 
     return {
       id: adminUser.id,
       email: adminUser.email,
       name: adminUser.name,
+      displayName: adminUser.name,
+      displayEmail: adminUser.email,
       role: adminUser.role,
       isActive: adminUser.isActive,
+      identityVisibility: "real",
     };
   }
 
@@ -225,7 +260,7 @@ export class BanAppealsService {
     };
   }
 
-  private mapModerationAction(row: any) {
+  private mapModerationAction(row: any, canViewRealStaffIdentity = false) {
     return {
       id: row.id,
       action: row.action,
@@ -233,7 +268,7 @@ export class BanAppealsService {
       createdAt: row.createdAt.toISOString(),
       expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
       actorAdminUser: row.actorAdminUser
-        ? this.mapAdminUser(row.actorAdminUser)
+        ? this.mapAdminUser(row.actorAdminUser, canViewRealStaffIdentity)
         : null,
       stream: row.stream
         ? {
@@ -245,7 +280,7 @@ export class BanAppealsService {
     };
   }
 
-  private mapAppealItem(appeal: any) {
+  private mapAppealItem(appeal: any, canViewRealStaffIdentity = false) {
     return {
       id: appeal.id,
       userId: appeal.userId,
@@ -261,16 +296,21 @@ export class BanAppealsService {
         ? appeal.banExpiresAtSnapshot.toISOString()
         : null,
       banReasonSnapshot: appeal.banReasonSnapshot ?? null,
-      reviewedByAdminUserId: appeal.reviewedByAdminUserId ?? null,
+      reviewedByAdminUserId: canViewRealStaffIdentity
+        ? appeal.reviewedByAdminUserId ?? null
+        : null,
       reviewedAt: appeal.reviewedAt ? appeal.reviewedAt.toISOString() : null,
       createdAt: appeal.createdAt.toISOString(),
       updatedAt: appeal.updatedAt.toISOString(),
       user: appeal.user ? this.mapUser(appeal.user) : null,
       reviewedByAdminUser: appeal.reviewedByAdminUser
-        ? this.mapAdminUser(appeal.reviewedByAdminUser)
+        ? this.mapAdminUser(appeal.reviewedByAdminUser, canViewRealStaffIdentity)
         : null,
       platformBanModerationAction: appeal.platformBanModerationAction
-        ? this.mapModerationAction(appeal.platformBanModerationAction)
+        ? this.mapModerationAction(
+          appeal.platformBanModerationAction,
+          canViewRealStaffIdentity,
+        )
         : null,
     };
   }
@@ -374,7 +414,6 @@ export class BanAppealsService {
       deviceLabel: requestContext.deviceLabel,
       metadata: {
         status: args.appeal.status ?? null,
-        reviewedByAdminUserId: args.appeal.reviewedByAdminUserId ?? null,
         ...(args.metadata || {}),
       },
       beforeState: args.beforeState ?? undefined,
@@ -509,7 +548,10 @@ export class BanAppealsService {
     adminUserId: string,
     query: AdminBanAppealsQueryDto = {},
   ) {
-    await this.requireAdmin(adminUserId);
+    const actor = await this.requireAdmin(adminUserId);
+    const canViewRealStaffIdentity = await this.canViewRealBanAppealStaffIdentity(
+      actor.role,
+    );
 
     const page = this.normalizePage(query.page, 1);
     const pageSize = this.normalizePageSize(query.pageSize, 20);
@@ -617,7 +659,9 @@ export class BanAppealsService {
     ]);
 
     return {
-      items: items.map((row: any) => this.mapAppealItem(row)),
+      items: items.map((row: any) =>
+        this.mapAppealItem(row, canViewRealStaffIdentity),
+      ),
       total,
       page,
       pageSize,
@@ -635,7 +679,10 @@ export class BanAppealsService {
     appealId: string,
     requestContext?: AdminAuditRequestContext | null,
   ) {
-    await this.requireAdmin(adminUserId);
+    const actor = await this.requireAdmin(adminUserId);
+    const canViewRealStaffIdentity = await this.canViewRealBanAppealStaffIdentity(
+      actor.role,
+    );
 
     const appeal = await this.prisma.banAppeal.findUnique({
       where: { id: appealId },
@@ -678,10 +725,10 @@ export class BanAppealsService {
     });
 
     return {
-      item: this.mapAppealItem(appeal),
+      item: this.mapAppealItem(appeal, canViewRealStaffIdentity),
       currentPlatformBanActive: this.isPlatformBanActive(currentUser),
       recentModerationActions: recentModerationActions.map((row) =>
-        this.mapModerationAction(row),
+        this.mapModerationAction(row, canViewRealStaffIdentity),
       ),
     };
   }
@@ -692,7 +739,10 @@ export class BanAppealsService {
     dto: AdminBanAppealNoteDto,
     requestContext?: AdminAuditRequestContext | null,
   ) {
-    await this.requireAdmin(adminUserId);
+    const actor = await this.requireAdmin(adminUserId);
+    const canViewRealStaffIdentity = await this.canViewRealBanAppealStaffIdentity(
+      actor.role,
+    );
 
     const appeal = await this.prisma.banAppeal.findUnique({
       where: { id: appealId },
@@ -751,7 +801,7 @@ export class BanAppealsService {
 
     return {
       success: true,
-      item: this.mapAppealItem(updated),
+      item: this.mapAppealItem(updated, canViewRealStaffIdentity),
     };
   }
 
@@ -761,7 +811,10 @@ export class BanAppealsService {
     dto: AdminBanAppealInReviewDto = {},
     requestContext?: AdminAuditRequestContext | null,
   ) {
-    await this.requireAdmin(adminUserId);
+    const actor = await this.requireAdmin(adminUserId);
+    const canViewRealStaffIdentity = await this.canViewRealBanAppealStaffIdentity(
+      actor.role,
+    );
 
     const appeal = await this.prisma.banAppeal.findUnique({
       where: { id: appealId },
@@ -828,7 +881,7 @@ export class BanAppealsService {
 
     return {
       success: true,
-      item: this.mapAppealItem(updated),
+      item: this.mapAppealItem(updated, canViewRealStaffIdentity),
     };
   }
 
@@ -838,7 +891,10 @@ export class BanAppealsService {
     dto: AdminBanAppealDecisionDto = {},
     requestContext?: AdminAuditRequestContext | null,
   ) {
-    await this.requireAdmin(adminUserId);
+    const actor = await this.requireAdmin(adminUserId);
+    const canViewRealStaffIdentity = await this.canViewRealBanAppealStaffIdentity(
+      actor.role,
+    );
 
     const appeal = await this.prisma.banAppeal.findUnique({
       where: { id: appealId },
@@ -943,7 +999,7 @@ export class BanAppealsService {
     return {
       success: true,
       unbannedNow,
-      item: this.mapAppealItem(updated),
+      item: this.mapAppealItem(updated, canViewRealStaffIdentity),
     };
   }
 
@@ -953,7 +1009,10 @@ export class BanAppealsService {
     dto: AdminBanAppealDecisionDto = {},
     requestContext?: AdminAuditRequestContext | null,
   ) {
-    await this.requireAdmin(adminUserId);
+    const actor = await this.requireAdmin(adminUserId);
+    const canViewRealStaffIdentity = await this.canViewRealBanAppealStaffIdentity(
+      actor.role,
+    );
 
     const appeal = await this.prisma.banAppeal.findUnique({
       where: { id: appealId },
@@ -1033,7 +1092,7 @@ export class BanAppealsService {
 
     return {
       success: true,
-      item: this.mapAppealItem(updated),
+      item: this.mapAppealItem(updated, canViewRealStaffIdentity),
     };
   }
 }
