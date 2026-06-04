@@ -605,14 +605,56 @@ export class AdminAuditService {
         };
     }
 
+    private maskStaffAdminIdsInAuditJson(
+        value: unknown,
+        canViewRealStaffIdentity = false,
+    ): unknown {
+        if (canViewRealStaffIdentity || value === null || value === undefined) {
+            return value;
+        }
+
+        if (Array.isArray(value)) {
+            return value.map((item) =>
+                this.maskStaffAdminIdsInAuditJson(item, canViewRealStaffIdentity),
+            );
+        }
+
+        if (typeof value !== "object") {
+            return value;
+        }
+
+        const output: Record<string, unknown> = {};
+
+        for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+            output[key] =
+                /AdminUserId$/i.test(key)
+                    ? null
+                    : this.maskStaffAdminIdsInAuditJson(item, canViewRealStaffIdentity);
+        }
+
+        return output;
+    }
+
     private toDetailItem(row: any, canViewRealStaffIdentity = false) {
         return {
             ...this.toListItem(row, canViewRealStaffIdentity),
-            beforeState: (row.beforeStateJson as Record<string, unknown> | null) ?? null,
-            afterState: (row.afterStateJson as Record<string, unknown> | null) ?? null,
-            diff: (row.diffJson as Record<string, unknown> | null) ?? null,
+            beforeState: this.maskStaffAdminIdsInAuditJson(
+                row.beforeStateJson,
+                canViewRealStaffIdentity,
+            ) as Record<string, unknown> | null,
+            afterState: this.maskStaffAdminIdsInAuditJson(
+                row.afterStateJson,
+                canViewRealStaffIdentity,
+            ) as Record<string, unknown> | null,
+            diff: this.maskStaffAdminIdsInAuditJson(
+                row.diffJson,
+                canViewRealStaffIdentity,
+            ) as Record<string, unknown> | null,
             userAgent: row.userAgent ?? null,
-            rawEvent: (row.rawEventJson as Record<string, unknown> | null) ?? null,
+            rawEvent: this.maskStaffAdminIdsInAuditJson(
+                row.rawEventJson,
+                canViewRealStaffIdentity,
+            ) as Record<string, unknown> | null,
         };
     }
 
