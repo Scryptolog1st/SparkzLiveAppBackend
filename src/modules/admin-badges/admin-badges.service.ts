@@ -965,7 +965,7 @@ export class AdminBadgesService {
       resourceType: "BADGE",
       resourceId: badge.id,
       metadata: { badgeSlug: badge.slug, status: badge.status },
-      afterState: this.mapBadge(badge, canViewRealStaffIdentity),
+      afterState: this.mapBadge(badge, true),
       context,
     });
 
@@ -1049,8 +1049,8 @@ export class AdminBadgesService {
       resourceType: "BADGE",
       resourceId: id,
       metadata: { badgeSlug: updated.slug, status: updated.status },
-      beforeState: this.mapBadge(existing, canViewRealStaffIdentity),
-      afterState: this.mapBadge(updated, canViewRealStaffIdentity),
+      beforeState: this.mapBadge(existing, true),
+      afterState: this.mapBadge(updated, true),
       context,
     });
 
@@ -1094,8 +1094,8 @@ export class AdminBadgesService {
       resourceType: "BADGE",
       resourceId: id,
       metadata: { badgeSlug: existing.slug },
-      beforeState: this.mapBadge(existing, canViewRealStaffIdentity),
-      afterState: this.mapBadge(updated, canViewRealStaffIdentity),
+      beforeState: this.mapBadge(existing, true),
+      afterState: this.mapBadge(updated, true),
       context,
     });
 
@@ -1153,8 +1153,8 @@ export class AdminBadgesService {
         mimeType: file.mimetype,
         size: file.size,
       },
-      beforeState: this.mapBadge(existing, canViewRealStaffIdentity),
-      afterState: this.mapBadge(updated, canViewRealStaffIdentity),
+      beforeState: this.mapBadge(existing, true),
+      afterState: this.mapBadge(updated, true),
       context,
     });
 
@@ -1442,7 +1442,7 @@ export class AdminBadgesService {
         startsAt: assignment.startsAt?.toISOString?.() ?? assignment.startsAt,
         expiresAt: assignment.expiresAt?.toISOString?.() ?? assignment.expiresAt,
       },
-      afterState: this.mapAssignment(assignment, canViewRealStaffIdentity),
+      afterState: this.mapAssignment(assignment, true),
       context,
     });
 
@@ -1555,8 +1555,8 @@ export class AdminBadgesService {
       resourceType: "USER_BADGE",
       resourceId: assignmentId,
       targetUserId: updated.userId,
-      beforeState: this.mapAssignment(existing, canViewRealStaffIdentity),
-      afterState: this.mapAssignment(updated, canViewRealStaffIdentity),
+      beforeState: this.mapAssignment(existing, true),
+      afterState: this.mapAssignment(updated, true),
       context,
     });
 
@@ -1663,8 +1663,8 @@ export class AdminBadgesService {
       metadata: {
         reason: updated.revokedReason ?? null,
       },
-      beforeState: this.mapAssignment(existing, canViewRealStaffIdentity),
-      afterState: this.mapAssignment(updated, canViewRealStaffIdentity),
+      beforeState: this.mapAssignment(existing, true),
+      afterState: this.mapAssignment(updated, true),
       context,
     });
 
