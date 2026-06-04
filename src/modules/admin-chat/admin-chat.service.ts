@@ -217,11 +217,12 @@ export class AdminChatService {
 
     async listMessages(
         adminUserId: string,
-        adminRole: AdminRole,
         query: AdminChatMessagesQueryDto = {},
     ) {
-        await this.requireAdmin(adminUserId);
-        const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(adminRole);
+        const admin = await this.requireAdmin(adminUserId);
+        const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(
+            admin.role as AdminRole,
+        );
 
         const page = this.normalizePage(query.page, 1);
         const pageSize = this.normalizePageSize(query.pageSize, 25);
@@ -379,12 +380,13 @@ export class AdminChatService {
 
     async getMessageById(
         adminUserId: string,
-        adminRole: AdminRole,
         id: string,
         requestContext?: AdminAuditRequestContext | null,
     ) {
-        await this.requireAdmin(adminUserId);
-        const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(adminRole);
+        const admin = await this.requireAdmin(adminUserId);
+        const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(
+            admin.role as AdminRole,
+        );
 
         const item = await this.prisma.chatMessage.findUnique({
             where: { id },
@@ -456,12 +458,13 @@ export class AdminChatService {
 
     async deleteMessage(
         adminUserId: string,
-        adminRole: AdminRole,
         id: string,
         requestContext?: AdminAuditRequestContext | null,
     ) {
-        await this.requireAdmin(adminUserId);
-        const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(adminRole);
+        const admin = await this.requireAdmin(adminUserId);
+        const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(
+            admin.role as AdminRole,
+        );
 
         const existing = await this.prisma.chatMessage.findUnique({
             where: { id },

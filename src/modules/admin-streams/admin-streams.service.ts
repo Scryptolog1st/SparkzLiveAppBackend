@@ -346,12 +346,13 @@ export class AdminStreamsService {
 
   async getById(
     adminUserId: string,
-    adminRole: AdminRole,
     streamId: string,
     requestContext?: AdminAuditRequestContext | null,
   ) {
-    await this.requireAdmin(adminUserId);
-    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(adminRole);
+    const admin = await this.requireAdmin(adminUserId);
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(
+      admin.role as AdminRole,
+    );
 
     const since = new Date(Date.now() - 15 * 60 * 1000);
 

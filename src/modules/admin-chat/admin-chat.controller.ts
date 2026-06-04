@@ -87,7 +87,7 @@ export class AdminChatController {
     @Get("messages")
     @RequireAdminPermission(ADMIN_PERMISSIONS.CHAT_VIEW)
     async listMessages(@Req() req: any, @Query() query: AdminChatMessagesQueryDto) {
-        return this.adminChat.listMessages(req.adminUser.id, req.adminUser.role, query);
+        return this.adminChat.listMessages(req.adminUser.id, query);
     }
 
     @Get("messages/:id")
@@ -95,7 +95,6 @@ export class AdminChatController {
     async getMessageById(@Req() req: any, @Param("id") id: string) {
         return this.adminChat.getMessageById(
             req.adminUser.id,
-            req.adminUser.role,
             id,
             this.buildAuditContext(req),
         );
@@ -106,7 +105,6 @@ export class AdminChatController {
     async deleteMessage(@Req() req: any, @Param("id") id: string) {
         return this.adminChat.deleteMessage(
             req.adminUser.id,
-            req.adminUser.role,
             id,
             this.buildAuditContext(req),
         );
@@ -117,7 +115,6 @@ export class AdminChatController {
     async deleteMessagePost(@Req() req: any, @Param("id") id: string) {
         return this.adminChat.deleteMessage(
             req.adminUser.id,
-            req.adminUser.role,
             id,
             this.buildAuditContext(req),
         );
