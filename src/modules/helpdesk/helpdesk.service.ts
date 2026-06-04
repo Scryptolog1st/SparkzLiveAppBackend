@@ -969,7 +969,10 @@ export class HelpdeskService {
         requestContext?: AdminAuditRequestContext | null,
     ) {
         const actor = await this.requireAdmin(adminUserId);
-        const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(actor.role);
+        const [canViewRealStaffIdentity, includeInternalNotes] = await Promise.all([
+            this.canViewRealStaffIdentity(actor.role),
+            this.canViewInternalNotes(actor.role),
+        ]);
 
         const messageBody = this.normalizeOptionalString(body.body);
         if (!messageBody) {
@@ -1024,7 +1027,7 @@ export class HelpdeskService {
             requestContext,
         });
 
-        return this.mapTicketDetail(updated, canViewRealStaffIdentity, true);
+        return this.mapTicketDetail(updated, canViewRealStaffIdentity, includeInternalNotes);
     }
 
     async addInternalNote(
@@ -1034,7 +1037,10 @@ export class HelpdeskService {
         requestContext?: AdminAuditRequestContext | null,
     ) {
         const actor = await this.requireAdmin(adminUserId);
-        const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(actor.role);
+        const [canViewRealStaffIdentity, includeInternalNotes] = await Promise.all([
+            this.canViewRealStaffIdentity(actor.role),
+            this.canViewInternalNotes(actor.role),
+        ]);
 
         const noteBody = this.normalizeOptionalString(body.body);
         if (!noteBody) {
@@ -1074,7 +1080,7 @@ export class HelpdeskService {
             requestContext,
         });
 
-        return this.mapTicketDetail(updated, canViewRealStaffIdentity, true);
+        return this.mapTicketDetail(updated, canViewRealStaffIdentity, includeInternalNotes);
     }
 
     async assignTicket(
@@ -1084,7 +1090,10 @@ export class HelpdeskService {
         requestContext?: AdminAuditRequestContext | null,
     ) {
         const actor = await this.requireAdmin(adminUserId);
-        const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(actor.role);
+        const [canViewRealStaffIdentity, includeInternalNotes] = await Promise.all([
+            this.canViewRealStaffIdentity(actor.role),
+            this.canViewInternalNotes(actor.role),
+        ]);
 
         if (body.assignedAdminUserId) {
             const assignedAdminUser = await this.prisma.adminUser.findUnique({
@@ -1102,24 +1111,30 @@ export class HelpdeskService {
             throw new NotFoundException("Helpdesk ticket not found.");
         }
 
-        const updated = await this.prisma.helpdeskTicket.update({
-            where: { id: existing.id },
-            data: {
-                assignedAdminUserId: body.assignedAdminUserId ?? null,
-            },
-            include: this.ticketInclude(true),
-        });
+        const updated = await this.prisma.$transaction(async (tx) => {
+            const updatedTicket = await tx.helpdeskTicket.update({
+                where: { id: existing.id },
+                data: {
+                    assignedAdminUserId: body.assignedAdminUserId ?? null,
+                },
+                include: this.ticketInclude(true),
+            });
 
-        await this.addTicketEvent({
-            ticketId: updated.id,
-            actorAdminUserId: adminUserId,
-            eventType: HelpdeskTicketEventType.ASSIGNED,
-            before: {
-                assignedAdminUserId: existing.assignedAdminUserId ?? null,
-            },
-            after: {
-                assignedAdminUserId: updated.assignedAdminUserId ?? null,
-            },
+            await tx.helpdeskTicketEvent.create({
+                data: {
+                    ticketId: updatedTicket.id,
+                    actorAdminUserId: adminUserId,
+                    eventType: HelpdeskTicketEventType.ASSIGNED,
+                    beforeJson: this.toJsonObject({
+                        assignedAdminUserId: existing.assignedAdminUserId ?? null,
+                    }),
+                    afterJson: this.toJsonObject({
+                        assignedAdminUserId: updatedTicket.assignedAdminUserId ?? null,
+                    }),
+                },
+            });
+
+            return updatedTicket;
         });
 
         await this.addAdminAuditLog({
@@ -1143,7 +1158,7 @@ export class HelpdeskService {
             requestContext,
         });
 
-        return this.mapTicketDetail(updated, canViewRealStaffIdentity, true);
+        return this.mapTicketDetail(updated, canViewRealStaffIdentity, includeInternalNotes);
     }
 
     async updateStatus(
@@ -1153,7 +1168,15 @@ export class HelpdeskService {
         requestContext?: AdminAuditRequestContext | null,
     ) {
         const actor = await this.requireAdmin(adminUserId);
-        const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(actor.role);
+        const permissions = await this.adminRolePermissions.getEffectivePermissions(actor.role);
+        const canViewRealStaffIdentity = hasAdminPermission(
+            permissions,
+            ADMIN_PERMISSIONS.ADMIN_IDENTITY_VIEW_REAL_STAFF,
+        );
+        const includeInternalNotes = hasAdminPermission(
+            permissions,
+            ADMIN_PERMISSIONS.HELPDESK_VIEW_INTERNAL_NOTES,
+        );
         const nextStatus = this.parseStatus(body.status);
 
         if (!nextStatus) {
@@ -1165,33 +1188,57 @@ export class HelpdeskService {
             throw new NotFoundException("Helpdesk ticket not found.");
         }
 
+        const wasTerminal =
+            existing.status === HelpdeskTicketStatus.CLOSED ||
+            existing.status === HelpdeskTicketStatus.RESOLVED;
         const closing =
             nextStatus === HelpdeskTicketStatus.CLOSED ||
             nextStatus === HelpdeskTicketStatus.RESOLVED;
+        const reopening = wasTerminal && !closing;
 
-        const updated = await this.prisma.helpdeskTicket.update({
-            where: { id: existing.id },
-            data: {
-                status: nextStatus,
-                closedAt: closing ? new Date() : null,
-                closedByAdminUserId: closing ? adminUserId : null,
-            },
-            include: this.ticketInclude(true),
-        });
+        if (
+            reopening &&
+            !hasAdminPermission(permissions, ADMIN_PERMISSIONS.HELPDESK_REOPEN)
+        ) {
+            throw new ForbiddenException("Admin does not have permission to reopen helpdesk tickets.");
+        }
 
-        await this.addTicketEvent({
-            ticketId: updated.id,
-            actorAdminUserId: adminUserId,
-            eventType:
-                nextStatus === HelpdeskTicketStatus.CLOSED
-                    ? HelpdeskTicketEventType.CLOSED
-                    : existing.status === HelpdeskTicketStatus.CLOSED
-                        ? HelpdeskTicketEventType.REOPENED
-                        : nextStatus === HelpdeskTicketStatus.ESCALATED
-                            ? HelpdeskTicketEventType.ESCALATED
-                            : HelpdeskTicketEventType.STATUS_CHANGED,
-            before: { status: existing.status },
-            after: { status: updated.status },
+        if (
+            !reopening &&
+            !hasAdminPermission(permissions, ADMIN_PERMISSIONS.HELPDESK_CLOSE)
+        ) {
+            throw new ForbiddenException("Admin does not have permission to update helpdesk ticket status.");
+        }
+
+        const updated = await this.prisma.$transaction(async (tx) => {
+            const updatedTicket = await tx.helpdeskTicket.update({
+                where: { id: existing.id },
+                data: {
+                    status: nextStatus,
+                    closedAt: closing ? new Date() : null,
+                    closedByAdminUserId: closing ? adminUserId : null,
+                },
+                include: this.ticketInclude(true),
+            });
+
+            await tx.helpdeskTicketEvent.create({
+                data: {
+                    ticketId: updatedTicket.id,
+                    actorAdminUserId: adminUserId,
+                    eventType:
+                        nextStatus === HelpdeskTicketStatus.CLOSED
+                            ? HelpdeskTicketEventType.CLOSED
+                            : reopening
+                                ? HelpdeskTicketEventType.REOPENED
+                                : nextStatus === HelpdeskTicketStatus.ESCALATED
+                                    ? HelpdeskTicketEventType.ESCALATED
+                                    : HelpdeskTicketEventType.STATUS_CHANGED,
+                    beforeJson: this.toJsonObject({ status: existing.status }),
+                    afterJson: this.toJsonObject({ status: updatedTicket.status }),
+                },
+            });
+
+            return updatedTicket;
         });
 
         await this.addAdminAuditLog({
@@ -1206,7 +1253,7 @@ export class HelpdeskService {
             requestContext,
         });
 
-        return this.mapTicketDetail(updated, canViewRealStaffIdentity, true);
+        return this.mapTicketDetail(updated, canViewRealStaffIdentity, includeInternalNotes);
     }
 
     async updatePriority(
@@ -1216,7 +1263,10 @@ export class HelpdeskService {
         requestContext?: AdminAuditRequestContext | null,
     ) {
         const actor = await this.requireAdmin(adminUserId);
-        const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(actor.role);
+        const [canViewRealStaffIdentity, includeInternalNotes] = await Promise.all([
+            this.canViewRealStaffIdentity(actor.role),
+            this.canViewInternalNotes(actor.role),
+        ]);
         const nextPriority = this.parsePriority(body.priority);
 
         if (!nextPriority) {
@@ -1228,18 +1278,24 @@ export class HelpdeskService {
             throw new NotFoundException("Helpdesk ticket not found.");
         }
 
-        const updated = await this.prisma.helpdeskTicket.update({
-            where: { id: existing.id },
-            data: { priority: nextPriority },
-            include: this.ticketInclude(true),
-        });
+        const updated = await this.prisma.$transaction(async (tx) => {
+            const updatedTicket = await tx.helpdeskTicket.update({
+                where: { id: existing.id },
+                data: { priority: nextPriority },
+                include: this.ticketInclude(true),
+            });
 
-        await this.addTicketEvent({
-            ticketId: updated.id,
-            actorAdminUserId: adminUserId,
-            eventType: HelpdeskTicketEventType.PRIORITY_CHANGED,
-            before: { priority: existing.priority },
-            after: { priority: updated.priority },
+            await tx.helpdeskTicketEvent.create({
+                data: {
+                    ticketId: updatedTicket.id,
+                    actorAdminUserId: adminUserId,
+                    eventType: HelpdeskTicketEventType.PRIORITY_CHANGED,
+                    beforeJson: this.toJsonObject({ priority: existing.priority }),
+                    afterJson: this.toJsonObject({ priority: updatedTicket.priority }),
+                },
+            });
+
+            return updatedTicket;
         });
 
         await this.addAdminAuditLog({
@@ -1254,7 +1310,7 @@ export class HelpdeskService {
             requestContext,
         });
 
-        return this.mapTicketDetail(updated, canViewRealStaffIdentity, true);
+        return this.mapTicketDetail(updated, canViewRealStaffIdentity, includeInternalNotes);
     }
 
     async updateCategory(
@@ -1264,7 +1320,10 @@ export class HelpdeskService {
         requestContext?: AdminAuditRequestContext | null,
     ) {
         const actor = await this.requireAdmin(adminUserId);
-        const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(actor.role);
+        const [canViewRealStaffIdentity, includeInternalNotes] = await Promise.all([
+            this.canViewRealStaffIdentity(actor.role),
+            this.canViewInternalNotes(actor.role),
+        ]);
 
         if (body.categoryId) {
             const category = await this.prisma.helpdeskCategory.findFirst({
@@ -1282,18 +1341,24 @@ export class HelpdeskService {
             throw new NotFoundException("Helpdesk ticket not found.");
         }
 
-        const updated = await this.prisma.helpdeskTicket.update({
-            where: { id: existing.id },
-            data: { categoryId: body.categoryId ?? null },
-            include: this.ticketInclude(true),
-        });
+        const updated = await this.prisma.$transaction(async (tx) => {
+            const updatedTicket = await tx.helpdeskTicket.update({
+                where: { id: existing.id },
+                data: { categoryId: body.categoryId ?? null },
+                include: this.ticketInclude(true),
+            });
 
-        await this.addTicketEvent({
-            ticketId: updated.id,
-            actorAdminUserId: adminUserId,
-            eventType: HelpdeskTicketEventType.CATEGORY_CHANGED,
-            before: { categoryId: existing.categoryId ?? null },
-            after: { categoryId: updated.categoryId ?? null },
+            await tx.helpdeskTicketEvent.create({
+                data: {
+                    ticketId: updatedTicket.id,
+                    actorAdminUserId: adminUserId,
+                    eventType: HelpdeskTicketEventType.CATEGORY_CHANGED,
+                    beforeJson: this.toJsonObject({ categoryId: existing.categoryId ?? null }),
+                    afterJson: this.toJsonObject({ categoryId: updatedTicket.categoryId ?? null }),
+                },
+            });
+
+            return updatedTicket;
         });
 
         await this.addAdminAuditLog({
@@ -1313,6 +1378,6 @@ export class HelpdeskService {
             requestContext,
         });
 
-        return this.mapTicketDetail(updated, canViewRealStaffIdentity, true);
+        return this.mapTicketDetail(updated, canViewRealStaffIdentity, includeInternalNotes);
     }
 }

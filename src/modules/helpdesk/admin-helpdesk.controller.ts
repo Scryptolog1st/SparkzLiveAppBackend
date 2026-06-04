@@ -54,25 +54,8 @@ export class AdminHelpdeskController {
     }
 
     private extractIp(req: Request) {
-        const forwardedFor = this.getHeader(req, "x-forwarded-for");
-        if (forwardedFor) {
-            const first = forwardedFor
-                .split(",")
-                .map((part) => part.trim())
-                .find(Boolean);
-
-            if (first) {
-                return first;
-            }
-        }
-
-        const realIp =
-            this.getHeader(req, "cf-connecting-ip") ||
-            this.getHeader(req, "x-real-ip") ||
-            req.ip ||
-            "";
-
-        return this.normalizeOptionalString(realIp);
+        const directIp = req.ip || req.socket?.remoteAddress || "";
+        return this.normalizeOptionalString(directIp);
     }
 
     private buildAuditContext(req: Request): AdminRequestContext {
@@ -173,7 +156,7 @@ export class AdminHelpdeskController {
     }
 
     @Post("tickets/:id/status")
-    @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_CLOSE)
+    @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_VIEW)
     async updateStatus(
         @Req() req: any,
         @Param("id") id: string,

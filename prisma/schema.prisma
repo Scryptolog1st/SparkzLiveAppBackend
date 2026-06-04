@@ -889,14 +889,14 @@ model HelpdeskTicketMessage {
 model HelpdeskTicketInternalNote {
   id          String    @id @default(uuid()) @db.Uuid
   ticketId    String    @map("ticket_id") @db.Uuid
-  adminUserId String    @map("admin_user_id") @db.Uuid
+  adminUserId String?   @map("admin_user_id") @db.Uuid
   body        String    @db.Text
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
   deletedAt   DateTime? @map("deleted_at")
 
   ticket    HelpdeskTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  adminUser AdminUser      @relation("HelpdeskInternalNoteAdminUser", fields: [adminUserId], references: [id], onDelete: Cascade)
+  adminUser AdminUser?     @relation("HelpdeskInternalNoteAdminUser", fields: [adminUserId], references: [id], onDelete: SetNull)
 
   @@index([ticketId, createdAt])
   @@index([adminUserId, createdAt])

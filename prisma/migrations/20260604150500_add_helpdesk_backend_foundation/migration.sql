@@ -68,7 +68,7 @@ CREATE TABLE "helpdesk_ticket_messages" (
 CREATE TABLE "helpdesk_ticket_internal_notes" (
     "id" UUID NOT NULL,
     "ticket_id" UUID NOT NULL,
-    "admin_user_id" UUID NOT NULL,
+    "admin_user_id" UUID,
     "body" TEXT NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
@@ -168,7 +168,7 @@ ALTER TABLE "helpdesk_ticket_messages" ADD CONSTRAINT "helpdesk_ticket_messages_
 ALTER TABLE "helpdesk_ticket_internal_notes" ADD CONSTRAINT "helpdesk_ticket_internal_notes_ticket_id_fkey" FOREIGN KEY ("ticket_id") REFERENCES "helpdesk_tickets"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "helpdesk_ticket_internal_notes" ADD CONSTRAINT "helpdesk_ticket_internal_notes_admin_user_id_fkey" FOREIGN KEY ("admin_user_id") REFERENCES "admin_users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "helpdesk_ticket_internal_notes" ADD CONSTRAINT "helpdesk_ticket_internal_notes_admin_user_id_fkey" FOREIGN KEY ("admin_user_id") REFERENCES "admin_users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "helpdesk_ticket_events" ADD CONSTRAINT "helpdesk_ticket_events_ticket_id_fkey" FOREIGN KEY ("ticket_id") REFERENCES "helpdesk_tickets"("id") ON DELETE CASCADE ON UPDATE CASCADE;
