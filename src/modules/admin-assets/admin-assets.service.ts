@@ -341,11 +341,7 @@ export class AdminAssetsService {
     };
   }
 
-  private mapQueueItem(
-    item: any,
-    context: QueueContext,
-    canViewRealStaffIdentity = false,
-  ) {
+  private mapQueueItem(item: any, context: QueueContext) {
     const liveStream = context.liveStreamByUserId.get(item.userId) ?? null;
 
     return {
@@ -359,7 +355,7 @@ export class AdminAssetsService {
       createdAt: item.createdAt.toISOString(),
       updatedAt: item.updatedAt.toISOString(),
       user: item.user ? this.mapUser(item.user) : null,
-      reviewedBy: this.mapStaffIdentity(item.reviewedBy, canViewRealStaffIdentity),
+      reviewedBy: item.reviewedBy ? this.mapUser(item.reviewedBy) : null,
       liveStream: liveStream
         ? {
           id: liveStream.id,
@@ -387,7 +383,11 @@ export class AdminAssetsService {
           title: item.stream.title,
         }
         : null,
-      createdBy: this.mapStaffIdentity(item.createdBy, canViewRealStaffIdentity),
+      createdBy: item.createdBy ? this.mapUser(item.createdBy) : null,
+      createdByAdminUser: this.mapStaffIdentity(
+        item.createdByAdminUser,
+        canViewRealStaffIdentity,
+      ),
     };
   }
 
@@ -405,7 +405,11 @@ export class AdminAssetsService {
           title: item.stream.title,
         }
         : null,
-      actor: this.mapStaffIdentity(item.actor, canViewRealStaffIdentity),
+      actor: item.actor ? this.mapUser(item.actor) : null,
+      actorAdminUser: this.mapStaffIdentity(
+        item.actorAdminUser,
+        canViewRealStaffIdentity,
+      ),
     };
   }
 
@@ -711,8 +715,7 @@ export class AdminAssetsService {
   }
 
   async list(adminUserId: string, query: AdminAssetsQueryDto = {}) {
-    const admin = await this.requireAdmin(adminUserId);
-    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(admin.role);
+    await this.requireAdmin(adminUserId);
 
     const now = new Date();
     const page = this.normalizePage(query.page, 1);
@@ -815,9 +818,7 @@ export class AdminAssetsService {
     const context = await this.buildQueueContext(items.map((item) => item.userId));
 
     return {
-      items: items.map((item) =>
-        this.mapQueueItem(item, context, canViewRealStaffIdentity),
-      ),
+      items: items.map((item) => this.mapQueueItem(item, context)),
       total,
       page,
       pageSize,
@@ -872,6 +873,15 @@ export class AdminAssetsService {
             createdBy: {
               include: { profile: true },
             },
+            createdByAdminUser: {
+              select: {
+                id: true,
+                email: true,
+                name: true,
+                role: true,
+                isActive: true,
+              },
+            },
           },
           orderBy: { createdAt: "desc" },
           take: 10,
@@ -889,6 +899,15 @@ export class AdminAssetsService {
             },
             actor: {
               include: { profile: true },
+            },
+            actorAdminUser: {
+              select: {
+                id: true,
+                email: true,
+                name: true,
+                role: true,
+                isActive: true,
+              },
             },
           },
           orderBy: { createdAt: "desc" },
@@ -915,7 +934,7 @@ export class AdminAssetsService {
 
     return {
       item: {
-        ...this.mapQueueItem(item, context, canViewRealStaffIdentity),
+        ...this.mapQueueItem(item, context),
         activeRestrictions: activeRestrictions.map((row) =>
           this.mapRestriction(row, canViewRealStaffIdentity),
         ),
@@ -923,7 +942,7 @@ export class AdminAssetsService {
           this.mapModerationAction(row, canViewRealStaffIdentity),
         ),
         relatedSubmissions: relatedSubmissions.map((row) =>
-          this.mapQueueItem(row, context, canViewRealStaffIdentity),
+          this.mapQueueItem(row, context),
         ),
       },
     };
@@ -934,8 +953,7 @@ export class AdminAssetsService {
     id: string,
     body: UpdateAdminAssetNotesDto,
   ) {
-    const admin = await this.requireAdmin(adminUserId);
-    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(admin.role);
+    await this.requireAdmin(adminUserId);
 
     const existing = await this.prisma.assetSubmission.findUnique({
       where: { id },
@@ -975,7 +993,7 @@ export class AdminAssetsService {
 
     return {
       success: true,
-      item: this.mapQueueItem(updated, context, canViewRealStaffIdentity),
+      item: this.mapQueueItem(updated, context),
     };
   }
 
@@ -984,8 +1002,7 @@ export class AdminAssetsService {
     id: string,
     body: ApproveAssetSubmissionDto,
   ) {
-    const admin = await this.requireAdmin(adminUserId);
-    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(admin.role);
+    await this.requireAdmin(adminUserId);
 
     const existing = await this.prisma.assetSubmission.findUnique({
       where: { id },
@@ -1071,7 +1088,7 @@ export class AdminAssetsService {
 
     return {
       success: true,
-      item: this.mapQueueItem(updated, context, canViewRealStaffIdentity),
+      item: this.mapQueueItem(updated, context),
     };
   }
 
@@ -1080,8 +1097,7 @@ export class AdminAssetsService {
     id: string,
     body: RejectAssetSubmissionDto,
   ) {
-    const admin = await this.requireAdmin(adminUserId);
-    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(admin.role);
+    await this.requireAdmin(adminUserId);
 
     const existing = await this.prisma.assetSubmission.findUnique({
       where: { id },
@@ -1123,7 +1139,7 @@ export class AdminAssetsService {
 
     return {
       success: true,
-      item: this.mapQueueItem(updated, context, canViewRealStaffIdentity),
+      item: this.mapQueueItem(updated, context),
     };
   }
 
