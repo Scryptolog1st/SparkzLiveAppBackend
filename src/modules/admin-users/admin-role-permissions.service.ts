@@ -31,6 +31,44 @@ export class AdminRolePermissionsService {
         "ANALYST",
     ];
 
+    private readonly effectivePermissionsCacheTtlMs = 30_000;
+
+    private readonly effectivePermissionsCache = new Map<
+        AdminRole,
+        { expiresAtMs: number; permissions: AdminPermission[] }
+    >();
+
+    private getCachedEffectivePermissions(role: AdminRole) {
+        const cached = this.effectivePermissionsCache.get(role);
+
+        if (!cached) {
+            return null;
+        }
+
+        if (cached.expiresAtMs <= Date.now()) {
+            this.effectivePermissionsCache.delete(role);
+            return null;
+        }
+
+        return [...cached.permissions];
+    }
+
+    private setCachedEffectivePermissions(
+        role: AdminRole,
+        permissions: AdminPermission[],
+    ) {
+        this.effectivePermissionsCache.set(role, {
+            expiresAtMs: Date.now() + this.effectivePermissionsCacheTtlMs,
+            permissions: [...permissions],
+        });
+
+        return [...permissions];
+    }
+
+    private invalidateEffectivePermissions(role: AdminRole) {
+        this.effectivePermissionsCache.delete(role);
+    }
+
     private normalizeRole(raw: string): AdminRole {
         const value = String(raw || "").trim().toUpperCase();
 
@@ -64,12 +102,12 @@ export class AdminRolePermissionsService {
         return adminUser;
     }
 
-    private normalizePermissionList(values: string[]) {
+    private normalizePermissionList(values: string[]): AdminPermission[] {
         return Array.from(
             new Set(
                 (values || [])
                     .map((value) => String(value || "").trim())
-                    .filter(Boolean),
+                    .filter((value): value is AdminPermission => isAdminPermission(value)),
             ),
         ).sort((a, b) => a.localeCompare(b));
     }
@@ -84,6 +122,12 @@ export class AdminRolePermissionsService {
             return ALL_ADMIN_PERMISSIONS;
         }
 
+        const cached = this.getCachedEffectivePermissions(role);
+
+        if (cached) {
+            return cached;
+        }
+
         const rows = await this.prisma.adminRolePermission.findMany({
             where: { role },
             select: {
@@ -93,13 +137,19 @@ export class AdminRolePermissionsService {
         });
 
         if (!rows.length) {
-            return getDefaultAdminPermissionsForRole(role);
+            return this.setCachedEffectivePermissions(
+                role,
+                getDefaultAdminPermissionsForRole(role),
+            );
         }
 
-        return rows
-            .filter((row) => row.enabled)
-            .map((row) => row.permission)
-            .filter((value): value is AdminPermission => isAdminPermission(value));
+        return this.setCachedEffectivePermissions(
+            role,
+            rows
+                .filter((row) => row.enabled)
+                .map((row) => row.permission)
+                .filter((value): value is AdminPermission => isAdminPermission(value)),
+        );
     }
 
     async listRolePermissions(adminUserId: string) {
@@ -196,6 +246,8 @@ export class AdminRolePermissionsService {
 
         const enabledSet = new Set(normalizedPermissions);
 
+        this.invalidateEffectivePermissions(role);
+
         await this.prisma.$transaction(
             ALL_ADMIN_PERMISSIONS.map((permission) =>
                 this.prisma.adminRolePermission.upsert({
@@ -220,6 +272,8 @@ export class AdminRolePermissionsService {
         const nextPermissions = this.normalizePermissionList(
             ALL_ADMIN_PERMISSIONS.filter((permission) => enabledSet.has(permission)),
         );
+
+        this.setCachedEffectivePermissions(role, nextPermissions);
 
         const addedPermissions = nextPermissions.filter(
             (permission) => !previousPermissions.includes(permission),
@@ -282,6 +336,8 @@ export class AdminRolePermissionsService {
             await this.getEffectivePermissions(role),
         );
 
+        this.invalidateEffectivePermissions(role);
+
         await this.prisma.adminRolePermission.deleteMany({
             where: { role },
         });
@@ -290,6 +346,8 @@ export class AdminRolePermissionsService {
         const nextPermissions = this.normalizePermissionList(
             Array.from(enabledDefaults),
         );
+
+        this.setCachedEffectivePermissions(role, nextPermissions);
 
         const addedPermissions = nextPermissions.filter(
             (permission) => !previousPermissions.includes(permission),
