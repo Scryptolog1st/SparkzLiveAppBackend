@@ -3,9 +3,14 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { BadgeStatus, Prisma, VipBadgeKey } from "@prisma/client";
+import { AdminRole, BadgeStatus, Prisma, VipBadgeKey } from "@prisma/client";
 
 import { AdminAuditService } from "../admin-audit/admin-audit.service";
+import {
+  ADMIN_PERMISSIONS,
+  hasAdminPermission,
+} from "../admin-users/admin-permissions";
+import { AdminRolePermissionsService } from "../admin-users/admin-role-permissions.service";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   BADGE_CHARACTERISTIC_KEYS,
@@ -66,10 +71,27 @@ export class AdminBadgesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly adminAudit: AdminAuditService,
+    private readonly adminRolePermissions: AdminRolePermissionsService,
   ) {}
 
   private now() {
     return new Date();
+  }
+
+  private async canViewRealStaffIdentity(role: AdminRole) {
+    const permissions = await this.adminRolePermissions.getEffectivePermissions(role);
+
+    return hasAdminPermission(
+      permissions,
+      ADMIN_PERMISSIONS.ADMIN_IDENTITY_VIEW_REAL_STAFF,
+    );
+  }
+
+  private mapStaffAdminId(
+    id: string | null | undefined,
+    canViewRealStaffIdentity: boolean,
+  ) {
+    return canViewRealStaffIdentity ? id ?? null : null;
   }
 
   private normalizeOptionalString(value: unknown, maxLength = 1000) {
@@ -223,7 +245,11 @@ export class AdminBadgesService {
     };
   }
 
-  private mapSystemVipBadge(meta: SystemVipBadgeMeta, assignmentCount = 0) {
+  private mapSystemVipBadge(
+    meta: SystemVipBadgeMeta,
+    assignmentCount = 0,
+    canViewRealStaffIdentity = false,
+  ) {
     const slug = `vip-${String(meta.key).toLowerCase().replace(/_/g, "-")}`;
 
     return {
@@ -274,15 +300,15 @@ export class AdminBadgesService {
       minSpendCents: meta.minSpendCents ?? null,
       topPercent: meta.topPercent ?? null,
       assignmentCount,
-      createdByAdminUserId: null,
-      updatedByAdminUserId: null,
+      createdByAdminUserId: this.mapStaffAdminId(null, canViewRealStaffIdentity),
+      updatedByAdminUserId: this.mapStaffAdminId(null, canViewRealStaffIdentity),
       deletedAt: null,
       createdAt: null,
       updatedAt: null,
     };
   }
 
-  private async listSystemVipBadges() {
+  private async listSystemVipBadges(canViewRealStaffIdentity = false) {
     const counts = await this.prisma.profile.groupBy({
       by: ["vipDisplayBadgeKey"],
       where: {
@@ -303,11 +329,18 @@ export class AdminBadgesService {
     });
 
     return VIP_SYSTEM_BADGE_META.map((meta) =>
-      this.mapSystemVipBadge(meta, countByKey.get(String(meta.key)) ?? 0),
+      this.mapSystemVipBadge(
+        meta,
+        countByKey.get(String(meta.key)) ?? 0,
+        canViewRealStaffIdentity,
+      ),
     );
   }
 
-  private async getSystemVipBadgeById(idOrSlug: string) {
+  private async getSystemVipBadgeById(
+    idOrSlug: string,
+    canViewRealStaffIdentity = false,
+  ) {
     const normalized = String(idOrSlug || "").trim().toLowerCase();
 
     if (!normalized) return null;
@@ -325,7 +358,7 @@ export class AdminBadgesService {
       },
     });
 
-    return this.mapSystemVipBadge(meta, count);
+    return this.mapSystemVipBadge(meta, count, canViewRealStaffIdentity);
   }
 
   private getVipMonthTimezone(): string {
@@ -424,8 +457,9 @@ export class AdminBadgesService {
       revokedAt?: Date | string | null;
       metadata?: Record<string, unknown> | null;
     } = {},
+    canViewRealStaffIdentity = false,
   ) {
-    const badge = this.mapSystemVipBadge(meta);
+    const badge = this.mapSystemVipBadge(meta, 0, canViewRealStaffIdentity);
     const startsAt = options.startsAt ?? null;
     const revokedAt = options.revokedAt ?? null;
 
@@ -439,8 +473,14 @@ export class AdminBadgesService {
       expiresAt: null,
       revokedAt: revokedAt instanceof Date ? revokedAt.toISOString() : revokedAt,
       revokedReason: options.revokedReason ?? null,
-      assignedByAdminUserId: options.assignedByAdminUserId ?? null,
-      revokedByAdminUserId: options.revokedByAdminUserId ?? null,
+      assignedByAdminUserId: this.mapStaffAdminId(
+        options.assignedByAdminUserId,
+        canViewRealStaffIdentity,
+      ),
+      revokedByAdminUserId: this.mapStaffAdminId(
+        options.revokedByAdminUserId,
+        canViewRealStaffIdentity,
+      ),
       note: options.note ?? "Manual VIP system badge override",
       metadata: {
         source: "VIP_SYSTEM",
@@ -457,11 +497,13 @@ export class AdminBadgesService {
 
   private async assignSystemVipBadge(
     adminUserId: string,
+    adminRole: AdminRole,
     userId: string,
     meta: SystemVipBadgeMeta,
     dto: AssignUserBadgeDto,
     context: AuditContext = {},
   ) {
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(adminRole);
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: this.userSelectForBadgeAssignment(),
@@ -542,7 +584,7 @@ export class AdminBadgesService {
         periodKey,
         assignmentType: "manual_admin_vip_override",
       },
-    });
+    }, canViewRealStaffIdentity);
 
     await this.auditSafely({
       adminUserId,
@@ -570,10 +612,12 @@ export class AdminBadgesService {
 
   private async revokeSystemVipBadge(
     adminUserId: string,
+    adminRole: AdminRole,
     assignmentId: string,
     dto: RevokeUserBadgeDto = {},
     context: AuditContext = {},
   ) {
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(adminRole);
     const resolved = this.resolveSystemVipAssignmentId(assignmentId);
 
     if (!resolved) {
@@ -641,7 +685,7 @@ export class AdminBadgesService {
         periodKey,
         assignmentType: "manual_admin_vip_override",
       },
-    });
+    }, canViewRealStaffIdentity);
 
     await this.auditSafely({
       adminUserId,
@@ -667,7 +711,7 @@ export class AdminBadgesService {
     };
   }
 
-  private mapBadge(row: any) {
+  private mapBadge(row: any, canViewRealStaffIdentity = false) {
     const characteristics = Array.isArray(row.characteristicsJson)
       ? row.characteristicsJson
       : [];
@@ -686,8 +730,14 @@ export class AdminBadgesService {
       characteristics,
       metadata: row.metadataJson ?? null,
       assignmentCount: row._count?.assignments ?? undefined,
-      createdByAdminUserId: row.createdByAdminUserId ?? null,
-      updatedByAdminUserId: row.updatedByAdminUserId ?? null,
+      createdByAdminUserId: this.mapStaffAdminId(
+        row.createdByAdminUserId,
+        canViewRealStaffIdentity,
+      ),
+      updatedByAdminUserId: this.mapStaffAdminId(
+        row.updatedByAdminUserId,
+        canViewRealStaffIdentity,
+      ),
       deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
       createdAt: row.createdAt?.toISOString?.() ?? row.createdAt,
       updatedAt: row.updatedAt?.toISOString?.() ?? row.updatedAt,
@@ -713,8 +763,10 @@ export class AdminBadgesService {
     };
   }
 
-  private mapAssignment(row: any) {
-    const badge = row.badge ? this.mapBadge(row.badge) : null;
+  private mapAssignment(row: any, canViewRealStaffIdentity = false) {
+    const badge = row.badge
+      ? this.mapBadge(row.badge, canViewRealStaffIdentity)
+      : null;
     const user = row.user ? this.mapUser(row.user) : null;
 
     const now = this.now();
@@ -737,8 +789,14 @@ export class AdminBadgesService {
       expiresAt: row.expiresAt?.toISOString?.() ?? row.expiresAt ?? null,
       revokedAt: row.revokedAt?.toISOString?.() ?? row.revokedAt ?? null,
       revokedReason: row.revokedReason ?? null,
-      assignedByAdminUserId: row.assignedByAdminUserId ?? null,
-      revokedByAdminUserId: row.revokedByAdminUserId ?? null,
+      assignedByAdminUserId: this.mapStaffAdminId(
+        row.assignedByAdminUserId,
+        canViewRealStaffIdentity,
+      ),
+      revokedByAdminUserId: this.mapStaffAdminId(
+        row.revokedByAdminUserId,
+        canViewRealStaffIdentity,
+      ),
       note: row.note ?? null,
       metadata: row.metadataJson ?? null,
       active,
@@ -783,7 +841,8 @@ export class AdminBadgesService {
     }
   }
 
-  async listBadges(query: AdminBadgesQueryDto = {}) {
+  async listBadges(adminRole: AdminRole, query: AdminBadgesQueryDto = {}) {
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(adminRole);
     const limit = this.parseLimit(query.limit, 50, 100);
     const offset = this.parseOffset(query.offset);
     const search = this.normalizeOptionalString(query.search, 120);
@@ -817,7 +876,7 @@ export class AdminBadgesService {
         take: limit,
         skip: offset,
       }),
-      this.listSystemVipBadges(),
+      this.listSystemVipBadges(canViewRealStaffIdentity),
     ]);
 
     const systemMatches = systemVipBadges.filter((badge) => {
@@ -847,12 +906,13 @@ export class AdminBadgesService {
       total: total + systemMatches.length,
       limit,
       offset,
-      items: [...systemMatches, ...items.map((item) => this.mapBadge(item))],
+      items: [...systemMatches, ...items.map((item) => this.mapBadge(item, canViewRealStaffIdentity))],
     };
   }
 
-  async getBadge(id: string) {
-    const systemVipBadge = await this.getSystemVipBadgeById(id);
+  async getBadge(adminRole: AdminRole, id: string) {
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(adminRole);
+    const systemVipBadge = await this.getSystemVipBadgeById(id, canViewRealStaffIdentity);
     if (systemVipBadge) {
       return { badge: systemVipBadge };
     }
@@ -866,10 +926,16 @@ export class AdminBadgesService {
       throw new NotFoundException("Badge not found.");
     }
 
-    return { badge: this.mapBadge(badge) };
+    return { badge: this.mapBadge(badge, canViewRealStaffIdentity) };
   }
 
-  async createBadge(adminUserId: string, dto: CreateAdminBadgeDto, context: AuditContext = {}) {
+  async createBadge(
+    adminUserId: string,
+    adminRole: AdminRole,
+    dto: CreateAdminBadgeDto,
+    context: AuditContext = {},
+  ) {
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(adminRole);
     const name = this.normalizeRequiredString(dto.name, "Badge name");
     const slug = await this.buildUniqueBadgeSlug(dto.slug, name);
     const characteristics = this.normalizeCharacteristics(dto.characteristics);
@@ -899,17 +965,24 @@ export class AdminBadgesService {
       resourceType: "BADGE",
       resourceId: badge.id,
       metadata: { badgeSlug: badge.slug, status: badge.status },
-      afterState: this.mapBadge(badge),
+      afterState: this.mapBadge(badge, canViewRealStaffIdentity),
       context,
     });
 
     return {
       success: true,
-      badge: this.mapBadge(badge),
+      badge: this.mapBadge(badge, canViewRealStaffIdentity),
     };
   }
 
-  async updateBadge(adminUserId: string, id: string, dto: UpdateAdminBadgeDto, context: AuditContext = {}) {
+  async updateBadge(
+    adminUserId: string,
+    adminRole: AdminRole,
+    id: string,
+    dto: UpdateAdminBadgeDto,
+    context: AuditContext = {},
+  ) {
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(adminRole);
     const existing = await this.prisma.badge.findFirst({
       where: { id, deletedAt: null },
       include: { _count: { select: { assignments: true } } },
@@ -976,18 +1049,24 @@ export class AdminBadgesService {
       resourceType: "BADGE",
       resourceId: id,
       metadata: { badgeSlug: updated.slug, status: updated.status },
-      beforeState: this.mapBadge(existing),
-      afterState: this.mapBadge(updated),
+      beforeState: this.mapBadge(existing, canViewRealStaffIdentity),
+      afterState: this.mapBadge(updated, canViewRealStaffIdentity),
       context,
     });
 
     return {
       success: true,
-      badge: this.mapBadge(updated),
+      badge: this.mapBadge(updated, canViewRealStaffIdentity),
     };
   }
 
-  async softDeleteBadge(adminUserId: string, id: string, context: AuditContext = {}) {
+  async softDeleteBadge(
+    adminUserId: string,
+    adminRole: AdminRole,
+    id: string,
+    context: AuditContext = {},
+  ) {
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(adminRole);
     const existing = await this.prisma.badge.findFirst({
       where: { id, deletedAt: null },
       include: { _count: { select: { assignments: true } } },
@@ -1015,23 +1094,25 @@ export class AdminBadgesService {
       resourceType: "BADGE",
       resourceId: id,
       metadata: { badgeSlug: existing.slug },
-      beforeState: this.mapBadge(existing),
-      afterState: this.mapBadge(updated),
+      beforeState: this.mapBadge(existing, canViewRealStaffIdentity),
+      afterState: this.mapBadge(updated, canViewRealStaffIdentity),
       context,
     });
 
     return {
       success: true,
-      badge: this.mapBadge(updated),
+      badge: this.mapBadge(updated, canViewRealStaffIdentity),
     };
   }
 
   async updateBadgeAsset(
     adminUserId: string,
+    adminRole: AdminRole,
     id: string,
     file: Express.Multer.File,
     context: AuditContext = {},
   ) {
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(adminRole);
     if (!file) {
       throw new BadRequestException("No badge asset file uploaded.");
     }
@@ -1072,8 +1153,8 @@ export class AdminBadgesService {
         mimeType: file.mimetype,
         size: file.size,
       },
-      beforeState: this.mapBadge(existing),
-      afterState: this.mapBadge(updated),
+      beforeState: this.mapBadge(existing, canViewRealStaffIdentity),
+      afterState: this.mapBadge(updated, canViewRealStaffIdentity),
       context,
     });
 
@@ -1086,7 +1167,7 @@ export class AdminBadgesService {
         mimeType: file.mimetype,
         size: file.size,
       },
-      badge: this.mapBadge(updated),
+      badge: this.mapBadge(updated, canViewRealStaffIdentity),
     };
   }
 
@@ -1136,7 +1217,8 @@ export class AdminBadgesService {
     };
   }
 
-  async listUserBadges(userId: string) {
+  async listUserBadges(adminRole: AdminRole, userId: string) {
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(adminRole);
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -1195,7 +1277,9 @@ export class AdminBadgesService {
       orderBy: [{ revokedAt: "asc" }, { createdAt: "desc" }],
     });
 
-    const mappedAssignments = assignments.map((assignment) => this.mapAssignment(assignment));
+    const mappedAssignments = assignments.map((assignment) =>
+      this.mapAssignment(assignment, canViewRealStaffIdentity),
+    );
     const currentVipKey = user.profile?.vipDisplayBadgeKey as VipBadgeKey | null | undefined;
     const currentVipMeta = currentVipKey
       ? VIP_SYSTEM_BADGE_META.find((meta) => meta.key === currentVipKey)
@@ -1213,7 +1297,7 @@ export class AdminBadgesService {
             vipLiveBadgeKey: user.profile?.vipLiveBadgeKey ?? null,
             vipLockedPeriodKey: user.profile?.vipLockedPeriodKey ?? null,
           },
-        }),
+        }, canViewRealStaffIdentity),
       );
     }
 
@@ -1225,14 +1309,23 @@ export class AdminBadgesService {
 
   async assignBadge(
     adminUserId: string,
+    adminRole: AdminRole,
     userId: string,
     dto: AssignUserBadgeDto,
     context: AuditContext = {},
   ) {
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(adminRole);
     const systemVipMeta = this.resolveSystemVipMetaFromBadgeId(dto.badgeId);
 
     if (systemVipMeta) {
-      return this.assignSystemVipBadge(adminUserId, userId, systemVipMeta, dto, context);
+      return this.assignSystemVipBadge(
+        adminUserId,
+        adminRole,
+        userId,
+        systemVipMeta,
+        dto,
+        context,
+      );
     }
 
     const [user, badge] = await Promise.all([
@@ -1349,22 +1442,24 @@ export class AdminBadgesService {
         startsAt: assignment.startsAt?.toISOString?.() ?? assignment.startsAt,
         expiresAt: assignment.expiresAt?.toISOString?.() ?? assignment.expiresAt,
       },
-      afterState: this.mapAssignment(assignment),
+      afterState: this.mapAssignment(assignment, canViewRealStaffIdentity),
       context,
     });
 
     return {
       success: true,
-      assignment: this.mapAssignment(assignment),
+      assignment: this.mapAssignment(assignment, canViewRealStaffIdentity),
     };
   }
 
   async updateUserBadge(
     adminUserId: string,
+    adminRole: AdminRole,
     assignmentId: string,
     dto: UpdateUserBadgeDto,
     context: AuditContext = {},
   ) {
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(adminRole);
     const existing = await this.prisma.userBadge.findUnique({
       where: { id: assignmentId },
       include: {
@@ -1460,24 +1555,32 @@ export class AdminBadgesService {
       resourceType: "USER_BADGE",
       resourceId: assignmentId,
       targetUserId: updated.userId,
-      beforeState: this.mapAssignment(existing),
-      afterState: this.mapAssignment(updated),
+      beforeState: this.mapAssignment(existing, canViewRealStaffIdentity),
+      afterState: this.mapAssignment(updated, canViewRealStaffIdentity),
       context,
     });
 
     return {
       success: true,
-      assignment: this.mapAssignment(updated),
+      assignment: this.mapAssignment(updated, canViewRealStaffIdentity),
     };
   }
 
   async revokeUserBadge(
     adminUserId: string,
+    adminRole: AdminRole,
     assignmentId: string,
     dto: RevokeUserBadgeDto = {},
     context: AuditContext = {},
   ) {
-    const systemVipRevocation = await this.revokeSystemVipBadge(adminUserId, assignmentId, dto, context);
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(adminRole);
+    const systemVipRevocation = await this.revokeSystemVipBadge(
+      adminUserId,
+      adminRole,
+      assignmentId,
+      dto,
+      context,
+    );
 
     if (systemVipRevocation) {
       return systemVipRevocation;
@@ -1560,14 +1663,14 @@ export class AdminBadgesService {
       metadata: {
         reason: updated.revokedReason ?? null,
       },
-      beforeState: this.mapAssignment(existing),
-      afterState: this.mapAssignment(updated),
+      beforeState: this.mapAssignment(existing, canViewRealStaffIdentity),
+      afterState: this.mapAssignment(updated, canViewRealStaffIdentity),
       context,
     });
 
     return {
       success: true,
-      assignment: this.mapAssignment(updated),
+      assignment: this.mapAssignment(updated, canViewRealStaffIdentity),
     };
   }
 

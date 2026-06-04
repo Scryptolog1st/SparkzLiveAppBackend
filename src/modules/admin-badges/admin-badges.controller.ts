@@ -119,8 +119,8 @@ export class AdminBadgesController {
 
   @Get()
   @RequireAdminPermission(ADMIN_PERMISSIONS.USER_BADGES_VIEW)
-  async listBadges(@Query() query: AdminBadgesQueryDto) {
-    return this.adminBadges.listBadges(query);
+  async listBadges(@Req() req: any, @Query() query: AdminBadgesQueryDto) {
+    return this.adminBadges.listBadges(req.adminUser.role, query);
   }
 
   @Post()
@@ -131,6 +131,7 @@ export class AdminBadgesController {
   ) {
     return this.adminBadges.createBadge(
       req.adminUser.id,
+      req.adminUser.role,
       body,
       this.buildAuditContext(req),
     );
@@ -144,8 +145,8 @@ export class AdminBadgesController {
 
   @Get("users/:userId/badges")
   @RequireAdminPermission(ADMIN_PERMISSIONS.USER_BADGES_VIEW)
-  async listUserBadges(@Param("userId") userId: string) {
-    return this.adminBadges.listUserBadges(userId);
+  async listUserBadges(@Req() req: any, @Param("userId") userId: string) {
+    return this.adminBadges.listUserBadges(req.adminUser.role, userId);
   }
 
   @Post("users/:userId/badges")
@@ -157,6 +158,7 @@ export class AdminBadgesController {
   ) {
     return this.adminBadges.assignBadge(
       req.adminUser.id,
+      req.adminUser.role,
       userId,
       body,
       this.buildAuditContext(req),
@@ -172,6 +174,7 @@ export class AdminBadgesController {
   ) {
     return this.adminBadges.updateUserBadge(
       req.adminUser.id,
+      req.adminUser.role,
       assignmentId,
       body,
       this.buildAuditContext(req),
@@ -187,6 +190,7 @@ export class AdminBadgesController {
   ) {
     return this.adminBadges.revokeUserBadge(
       req.adminUser.id,
+      req.adminUser.role,
       assignmentId,
       body,
       this.buildAuditContext(req),
@@ -195,8 +199,8 @@ export class AdminBadgesController {
 
   @Get(":id")
   @RequireAdminPermission(ADMIN_PERMISSIONS.USER_BADGES_VIEW)
-  async getBadge(@Param("id") id: string) {
-    return this.adminBadges.getBadge(id);
+  async getBadge(@Req() req: any, @Param("id") id: string) {
+    return this.adminBadges.getBadge(req.adminUser.role, id);
   }
 
   @Patch(":id")
@@ -208,6 +212,7 @@ export class AdminBadgesController {
   ) {
     return this.adminBadges.updateBadge(
       req.adminUser.id,
+      req.adminUser.role,
       id,
       body,
       this.buildAuditContext(req),
@@ -219,6 +224,7 @@ export class AdminBadgesController {
   async deleteBadge(@Req() req: any, @Param("id") id: string) {
     return this.adminBadges.softDeleteBadge(
       req.adminUser.id,
+      req.adminUser.role,
       id,
       this.buildAuditContext(req),
     );
@@ -242,6 +248,7 @@ export class AdminBadgesController {
   ) {
     return this.adminBadges.updateBadgeAsset(
       req.adminUser.id,
+      req.adminUser.role,
       id,
       file,
       this.buildAuditContext(req),
