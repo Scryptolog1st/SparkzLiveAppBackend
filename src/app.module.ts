@@ -52,6 +52,7 @@ import { FeedModule } from "./modules/feed/feed.module";
 import { StoriesModule } from "./modules/stories/stories.module";
 import { AdvertisementsModule } from "./modules/advertisements/advertisements.module";
 import { AdminAdvertisementsModule } from "./modules/admin-advertisements/admin-advertisements.module";
+import { HelpdeskModule } from "./modules/helpdesk/helpdesk.module";
 
 
 import { AdvertisementJobsModule } from "./modules/advertisement-jobs/advertisement-jobs.module";
@@ -112,6 +113,7 @@ import { AdvertisementJobsModule } from "./modules/advertisement-jobs/advertisem
     AdminPayoutsModule,
     AdminChatModule,
     AdminReportsModule,
+    HelpdeskModule,
     BanAppealsModule,
     AdminSystemModule,
     ClientTelemetryModule,
