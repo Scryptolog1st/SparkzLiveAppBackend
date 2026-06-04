@@ -63,14 +63,14 @@ export class AdminAdvertisementsController {
 
   @Get()
   @RequireAdminPermission(ADMIN_PERMISSIONS.ADMIN_ADVERT_VIEW)
-  async list(@Query() query: AdminAdvertisementsQueryDto) {
-    return this.adminAdvertisements.list(query);
+  async list(@Req() req: any, @Query() query: AdminAdvertisementsQueryDto) {
+    return this.adminAdvertisements.list(req.adminUser.role, query);
   }
 
   @Get(":id")
   @RequireAdminPermission(ADMIN_PERMISSIONS.ADMIN_ADVERT_VIEW)
-  async byId(@Param("id") id: string) {
-    return this.adminAdvertisements.byId(id);
+  async byId(@Req() req: any, @Param("id") id: string) {
+    return this.adminAdvertisements.byId(req.adminUser.role, id);
   }
 
   @Post("revisions/:revisionId/approve")
@@ -78,6 +78,7 @@ export class AdminAdvertisementsController {
   async approveRevision(@Req() req: any, @Param("revisionId") revisionId: string) {
     return this.adminAdvertisements.approveRevision(
       req.adminUser.id,
+      req.adminUser.role,
       revisionId,
       this.buildAuditContext(req),
     );
@@ -92,6 +93,7 @@ export class AdminAdvertisementsController {
   ) {
     return this.adminAdvertisements.denyRevision(
       req.adminUser.id,
+      req.adminUser.role,
       revisionId,
       body.reason,
       this.buildAuditContext(req),
@@ -103,6 +105,7 @@ export class AdminAdvertisementsController {
   async pause(@Req() req: any, @Param("id") id: string, @Body() body: PauseAdvertisementDto) {
     return this.adminAdvertisements.pauseAdvertisement(
       req.adminUser.id,
+      req.adminUser.role,
       id,
       body.reason,
       this.buildAuditContext(req),
@@ -114,6 +117,7 @@ export class AdminAdvertisementsController {
   async resume(@Req() req: any, @Param("id") id: string) {
     return this.adminAdvertisements.resumeAdvertisement(
       req.adminUser.id,
+      req.adminUser.role,
       id,
       this.buildAuditContext(req),
     );

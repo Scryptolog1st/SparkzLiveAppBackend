@@ -81,6 +81,7 @@ export class AdminStreamsController {
   async byId(@Req() req: any, @Param("id") id: string) {
     return this.adminStreams.getById(
       req.adminUser.id,
+      req.adminUser.role,
       id,
       this.buildAuditContext(req),
     );

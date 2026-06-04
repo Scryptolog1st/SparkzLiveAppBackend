@@ -5,8 +5,14 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
+import type { AdminRole } from "@prisma/client";
 
 import { AdminAuditService } from "../admin-audit/admin-audit.service";
+import {
+  ADMIN_PERMISSIONS,
+  hasAdminPermission,
+} from "../admin-users/admin-permissions";
+import { AdminRolePermissionsService } from "../admin-users/admin-role-permissions.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { StreamsService } from "../streams/streams.service";
 import { VideoService } from "../video/video.service";
@@ -26,6 +32,7 @@ export class AdminStreamsService {
     private readonly streams: StreamsService,
     private readonly video: VideoService,
     private readonly adminAudit: AdminAuditService,
+    private readonly adminRolePermissions: AdminRolePermissionsService,
   ) { }
 
   private normalizePage(value: string | number | undefined, fallback: number) {
@@ -110,7 +117,23 @@ export class AdminStreamsService {
     };
   }
 
-  private mapRecentChatMessage(message: any) {
+  private async canViewRealStaffIdentity(role: AdminRole) {
+    const permissions = await this.adminRolePermissions.getEffectivePermissions(role);
+
+    return hasAdminPermission(
+      permissions,
+      ADMIN_PERMISSIONS.ADMIN_IDENTITY_VIEW_REAL_STAFF,
+    );
+  }
+
+  private mapStaffAdminId(
+    id: string | null | undefined,
+    canViewRealStaffIdentity = false,
+  ) {
+    return canViewRealStaffIdentity ? id ?? null : null;
+  }
+
+  private mapRecentChatMessage(message: any, canViewRealStaffIdentity = false) {
     const isDeleted = Boolean(message?.isDeleted);
     const deletionLabel =
       message?.deletionLabel?.trim() || "Message deleted by an Admin.";
@@ -129,7 +152,10 @@ export class AdminStreamsService {
       createdAt: message.createdAt.toISOString(),
       isDeleted,
       deletedAt: message.deletedAt ? message.deletedAt.toISOString() : null,
-      deletedByAdminUserId: message.deletedByAdminUserId ?? null,
+      deletedByAdminUserId: this.mapStaffAdminId(
+        message.deletedByAdminUserId,
+        canViewRealStaffIdentity,
+      ),
       deletionLabel: isDeleted ? deletionLabel : null,
     };
   }
@@ -320,10 +346,12 @@ export class AdminStreamsService {
 
   async getById(
     adminUserId: string,
+    adminRole: AdminRole,
     streamId: string,
     requestContext?: AdminAuditRequestContext | null,
   ) {
     await this.requireAdmin(adminUserId);
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(adminRole);
 
     const since = new Date(Date.now() - 15 * 60 * 1000);
 
@@ -400,7 +428,11 @@ export class AdminStreamsService {
         recentChatCount,
         recentGiftCount,
       },
-      recentChat: chatPreview.reverse().map((message) => this.mapRecentChatMessage(message)),
+      recentChat: chatPreview
+        .reverse()
+        .map((message) =>
+          this.mapRecentChatMessage(message, canViewRealStaffIdentity),
+        ),
     };
   }
 

@@ -9,10 +9,16 @@ import {
   AdvertisementStatus,
   AdminAuditActionType,
   AdminAuditSeverity,
+  AdminRole,
   Prisma,
 } from "@prisma/client";
 
 import { AdminAuditService } from "../admin-audit/admin-audit.service";
+import {
+  ADMIN_PERMISSIONS,
+  hasAdminPermission,
+} from "../admin-users/admin-permissions";
+import { AdminRolePermissionsService } from "../admin-users/admin-role-permissions.service";
 import { AdvertisementsService } from "../advertisements/advertisements.service";
 import { PrismaService } from "../prisma/prisma.service";
 import {
@@ -43,6 +49,7 @@ export class AdminAdvertisementsService {
     private readonly prisma: PrismaService,
     private readonly advertisements: AdvertisementsService,
     private readonly adminAudit: AdminAuditService,
+    private readonly adminRolePermissions: AdminRolePermissionsService,
   ) {}
 
   private normalizeLimit(value: unknown, fallback = 50) {
@@ -383,10 +390,84 @@ export class AdminAdvertisementsService {
     return changes;
   }
 
-  private mapAd(ad: any) {
+  private async canViewRealStaffIdentity(role: AdminRole) {
+    const permissions = await this.adminRolePermissions.getEffectivePermissions(role);
+
+    return hasAdminPermission(
+      permissions,
+      ADMIN_PERMISSIONS.ADMIN_IDENTITY_VIEW_REAL_STAFF,
+    );
+  }
+
+  private mapStaffIdentity(actor: any, canViewRealStaffIdentity = false) {
+    if (!actor) {
+      return null;
+    }
+
+    const fallbackName = String(actor.name || actor.email || "Staff agent").trim();
+
+    if (canViewRealStaffIdentity) {
+      return {
+        id: actor.id,
+        email: actor.email ?? null,
+        name: fallbackName,
+        role: actor.role ?? null,
+        isActive: actor.isActive ?? true,
+        displayName: fallbackName,
+        displayEmail: actor.email ?? "No email",
+        identityVisibility: "real" as const,
+      };
+    }
+
+    return {
+      id: null,
+      email: "hidden",
+      name: "Staff agent",
+      role: actor.role ?? null,
+      isActive: actor.isActive ?? true,
+      displayName: "Staff agent",
+      displayEmail: "Hidden",
+      identityVisibility: "anonymous" as const,
+    };
+  }
+
+  private mapStaffAdminId(
+    id: string | null | undefined,
+    canViewRealStaffIdentity = false,
+  ) {
+    return canViewRealStaffIdentity ? id ?? null : null;
+  }
+
+  private mapAdvertisementRevision(
+    revision: any,
+    approvedRevision: any,
+    canViewRealStaffIdentity = false,
+  ) {
+    if (!revision) {
+      return null;
+    }
+
+    const { reviewedBy, ...rest } = revision;
+
+    return {
+      ...rest,
+      reviewedByAdminUserId: this.mapStaffAdminId(
+        revision.reviewedByAdminUserId,
+        canViewRealStaffIdentity,
+      ),
+      reviewedBy: this.mapStaffIdentity(reviewedBy, canViewRealStaffIdentity),
+      changeLog:
+        revision.status === "PENDING_REVIEW"
+          ? this.getRevisionChangeLog(approvedRevision, revision)
+          : [],
+    };
+  }
+
+  private mapAd(ad: any, canViewRealStaffIdentity = false) {
     const currentRevision = this.getCurrentRevision(ad);
     const approvedRevision = this.getApprovedRevision(ad);
-    const pendingRevision = ad.revisions.find((revision: any) => revision.status === "PENDING_REVIEW") || null;
+    const pendingRevision =
+      ad.revisions.find((revision: any) => revision.status === "PENDING_REVIEW") || null;
     const pendingChangeLog = this.getRevisionChangeLog(approvedRevision, pendingRevision);
 
     return {
@@ -410,20 +491,33 @@ export class AdminAdvertisementsService {
       lastPaymentFailureReason: ad.lastPaymentFailureReason,
       currentRevisionId: ad.currentRevisionId,
       latestSubmittedRevisionId: ad.latestSubmittedRevisionId,
-      currentRevision,
+      adminPausedByAdminUserId: this.mapStaffAdminId(
+        ad.adminPausedByAdminUserId,
+        canViewRealStaffIdentity,
+      ),
+      currentRevision: this.mapAdvertisementRevision(
+        currentRevision,
+        approvedRevision,
+        canViewRealStaffIdentity,
+      ),
       pendingRevision: pendingRevision
         ? {
-            ...pendingRevision,
+            ...this.mapAdvertisementRevision(
+              pendingRevision,
+              approvedRevision,
+              canViewRealStaffIdentity,
+            ),
             changeLog: pendingChangeLog,
           }
         : null,
       changeLog: pendingChangeLog,
-      revisions: ad.revisions.map((revision: any) => ({
-        ...revision,
-        changeLog: revision.status === "PENDING_REVIEW"
-          ? this.getRevisionChangeLog(approvedRevision, revision)
-          : [],
-      })),
+      revisions: ad.revisions.map((revision: any) =>
+        this.mapAdvertisementRevision(
+          revision,
+          approvedRevision,
+          canViewRealStaffIdentity,
+        ),
+      ),
       billingEvents: ad.billingEvents,
       createdAt: ad.createdAt.toISOString(),
       updatedAt: ad.updatedAt.toISOString(),
@@ -497,7 +591,8 @@ export class AdminAdvertisementsService {
     };
   }
 
-  async list(query: AdminAdvertisementsQueryDto) {
+  async list(adminRole: AdminRole, query: AdminAdvertisementsQueryDto) {
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(adminRole);
     const limit = this.normalizeLimit(query.limit, 50);
     const status = String(query.status || "").trim().toUpperCase();
     const revisionStatus = String(query.revisionStatus || "").trim().toUpperCase();
@@ -529,7 +624,7 @@ export class AdminAdvertisementsService {
     });
 
     const items = rows
-      .map((ad) => this.mapAd(ad))
+      .map((ad) => this.mapAd(ad, canViewRealStaffIdentity))
       .filter((ad: any) => {
         if (!q) return true;
         return [
@@ -551,7 +646,8 @@ export class AdminAdvertisementsService {
     };
   }
 
-  async byId(id: string) {
+  async byId(adminRole: AdminRole, id: string) {
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(adminRole);
     const ad = await this.prisma.advertisement.findUnique({
       where: { id },
       include: {
@@ -570,15 +666,17 @@ export class AdminAdvertisementsService {
 
     return {
       success: true,
-      advertisement: this.mapAd(ad),
+      advertisement: this.mapAd(ad, canViewRealStaffIdentity),
     };
   }
 
   async approveRevision(
     adminUserId: string,
+    adminRole: AdminRole,
     revisionId: string,
     context: AdminAuditRequestContext,
   ) {
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(adminRole);
     const result = await this.prisma.$transaction(async (tx) => {
       const revision = await tx.advertisementRevision.findUnique({
         where: { id: revisionId },
@@ -661,7 +759,7 @@ export class AdminAdvertisementsService {
       resourceId: revisionId,
       target: {
         id: result.id,
-        name: this.mapAd(result).title,
+        name: this.mapAd(result, true).title,
         type: "ADVERTISEMENT",
       },
       references: {
@@ -680,16 +778,18 @@ export class AdminAdvertisementsService {
 
     return {
       success: true,
-      advertisement: this.mapAd(result),
+      advertisement: this.mapAd(result, canViewRealStaffIdentity),
     };
   }
 
   async denyRevision(
     adminUserId: string,
+    adminRole: AdminRole,
     revisionId: string,
     reason: string,
     context: AdminAuditRequestContext,
   ) {
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(adminRole);
     const normalizedReason = String(reason || "").trim();
 
     if (!normalizedReason) {
@@ -753,7 +853,7 @@ export class AdminAdvertisementsService {
       severity: AdminAuditSeverity.WARNING,
       target: {
         id: result.id,
-        name: this.mapAd(result).title,
+        name: this.mapAd(result, true).title,
         type: "ADVERTISEMENT",
       },
       references: {
@@ -772,16 +872,18 @@ export class AdminAdvertisementsService {
 
     return {
       success: true,
-      advertisement: this.mapAd(result),
+      advertisement: this.mapAd(result, canViewRealStaffIdentity),
     };
   }
 
   async pauseAdvertisement(
     adminUserId: string,
+    adminRole: AdminRole,
     id: string,
     reason: string,
     context: AdminAuditRequestContext,
   ) {
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(adminRole);
     const normalizedReason = String(reason || "").trim();
 
     if (!normalizedReason) {
@@ -842,15 +944,17 @@ export class AdminAdvertisementsService {
 
     return {
       success: true,
-      advertisement: this.mapAd(updated),
+      advertisement: this.mapAd(updated, canViewRealStaffIdentity),
     };
   }
 
   async resumeAdvertisement(
     adminUserId: string,
+    adminRole: AdminRole,
     id: string,
     context: AdminAuditRequestContext,
   ) {
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(adminRole);
     const ad = await this.prisma.advertisement.findUnique({
       where: { id },
     });
@@ -906,7 +1010,7 @@ export class AdminAdvertisementsService {
 
     return {
       success: true,
-      advertisement: this.mapAd(updated),
+      advertisement: this.mapAd(updated, canViewRealStaffIdentity),
     };
   }
 }
