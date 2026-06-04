@@ -6,12 +6,19 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import {
+  AdminRole,
   AssetSubmissionStatus,
   AssetSubmissionType,
   Prisma,
   StreamStatus,
 } from "@prisma/client";
 
+import { getAnonymousStaffLabel } from "../admin-users/admin-identity-utils";
+import {
+  ADMIN_PERMISSIONS,
+  hasAdminPermission,
+} from "../admin-users/admin-permissions";
+import { AdminRolePermissionsService } from "../admin-users/admin-role-permissions.service";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   AdminAssetsQueryDto,
@@ -46,7 +53,10 @@ export class AdminAssetsService {
     AssetSubmissionType.PROFILE_BANNER,
   ];
 
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly adminRolePermissions: AdminRolePermissionsService,
+  ) { }
 
   private normalizePage(value: string | number | undefined, fallback: number) {
     const parsed = Number(value);
@@ -270,6 +280,15 @@ export class AdminAssetsService {
     return adminUser;
   }
 
+  private async canViewRealStaffIdentity(role: AdminRole) {
+    const permissions = await this.adminRolePermissions.getEffectivePermissions(role);
+
+    return hasAdminPermission(
+      permissions,
+      ADMIN_PERMISSIONS.ADMIN_IDENTITY_VIEW_REAL_STAFF,
+    );
+  }
+
   private mapUser(user: any) {
     return {
       id: user.id,
@@ -278,6 +297,47 @@ export class AdminAssetsService {
       username: user.username,
       displayName: user.profile?.displayName?.trim() || user.username,
       avatarUrl: user.profile?.avatarUrl ?? null,
+    };
+  }
+
+  private mapStaffIdentity(actor: any, canViewRealStaffIdentity: boolean) {
+    if (!actor) {
+      return null;
+    }
+
+    const fallbackName =
+      actor.name?.trim?.() ||
+      actor.profile?.displayName?.trim?.() ||
+      actor.username ||
+      "Staff agent";
+
+    if (canViewRealStaffIdentity) {
+      return {
+        id: actor.id,
+        email: actor.email ?? null,
+        name: fallbackName,
+        role: actor.role ?? null,
+        isActive: actor.isActive ?? true,
+        displayName: fallbackName,
+        displayEmail: actor.email ?? "No email",
+        identityVisibility: "real" as const,
+      };
+    }
+
+    const anonymousName = getAnonymousStaffLabel({
+      id: actor.id,
+      role: actor.role,
+    });
+
+    return {
+      id: null,
+      email: "hidden",
+      name: anonymousName,
+      role: actor.role ?? null,
+      isActive: actor.isActive ?? true,
+      displayName: anonymousName,
+      displayEmail: "Hidden",
+      identityVisibility: "anonymous" as const,
     };
   }
 
@@ -310,7 +370,7 @@ export class AdminAssetsService {
     };
   }
 
-  private mapRestriction(item: any) {
+  private mapRestriction(item: any, canViewRealStaffIdentity = false) {
     return {
       id: item.id,
       kind: item.kind,
@@ -324,10 +384,14 @@ export class AdminAssetsService {
         }
         : null,
       createdBy: item.createdBy ? this.mapUser(item.createdBy) : null,
+      createdByAdminUser: this.mapStaffIdentity(
+        item.createdByAdminUser,
+        canViewRealStaffIdentity,
+      ),
     };
   }
 
-  private mapModerationAction(item: any) {
+  private mapModerationAction(item: any, canViewRealStaffIdentity = false) {
     return {
       id: item.id,
       action: item.action,
@@ -342,6 +406,10 @@ export class AdminAssetsService {
         }
         : null,
       actor: item.actor ? this.mapUser(item.actor) : null,
+      actorAdminUser: this.mapStaffIdentity(
+        item.actorAdminUser,
+        canViewRealStaffIdentity,
+      ),
     };
   }
 
@@ -766,7 +834,8 @@ export class AdminAssetsService {
   }
 
   async getById(adminUserId: string, id: string) {
-    await this.requireAdmin(adminUserId);
+    const admin = await this.requireAdmin(adminUserId);
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(admin.role);
 
     const item = await this.prisma.assetSubmission.findUnique({
       where: { id },
@@ -804,6 +873,15 @@ export class AdminAssetsService {
             createdBy: {
               include: { profile: true },
             },
+            createdByAdminUser: {
+              select: {
+                id: true,
+                email: true,
+                name: true,
+                role: true,
+                isActive: true,
+              },
+            },
           },
           orderBy: { createdAt: "desc" },
           take: 10,
@@ -821,6 +899,15 @@ export class AdminAssetsService {
             },
             actor: {
               include: { profile: true },
+            },
+            actorAdminUser: {
+              select: {
+                id: true,
+                email: true,
+                name: true,
+                role: true,
+                isActive: true,
+              },
             },
           },
           orderBy: { createdAt: "desc" },
@@ -849,10 +936,10 @@ export class AdminAssetsService {
       item: {
         ...this.mapQueueItem(item, context),
         activeRestrictions: activeRestrictions.map((row) =>
-          this.mapRestriction(row),
+          this.mapRestriction(row, canViewRealStaffIdentity),
         ),
         recentModerationActions: recentModerationActions.map((row) =>
-          this.mapModerationAction(row),
+          this.mapModerationAction(row, canViewRealStaffIdentity),
         ),
         relatedSubmissions: relatedSubmissions.map((row) =>
           this.mapQueueItem(row, context),
