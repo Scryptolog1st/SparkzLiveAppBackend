@@ -1188,6 +1188,10 @@ export class HelpdeskService {
             throw new NotFoundException("Helpdesk ticket not found.");
         }
 
+        if (existing.status === nextStatus) {
+            throw new BadRequestException("Ticket already has this status.");
+        }
+
         const wasTerminal =
             existing.status === HelpdeskTicketStatus.CLOSED ||
             existing.status === HelpdeskTicketStatus.RESOLVED;

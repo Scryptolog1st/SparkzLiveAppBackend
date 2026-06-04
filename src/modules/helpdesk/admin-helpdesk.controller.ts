@@ -156,7 +156,7 @@ export class AdminHelpdeskController {
     }
 
     @Post("tickets/:id/status")
-    @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_VIEW)
+    @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_ASSIGN)
     async updateStatus(
         @Req() req: any,
         @Param("id") id: string,
