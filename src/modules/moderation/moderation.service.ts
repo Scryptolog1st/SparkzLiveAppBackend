@@ -5,13 +5,18 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
-import type { StreamRole } from "@prisma/client";
+import type { AdminRole, StreamRole } from "@prisma/client";
 import {
   ModerationActionType,
   Prisma,
   RestrictionKind,
 } from "@prisma/client";
 
+import {
+  ADMIN_PERMISSIONS,
+  hasAdminPermission,
+} from "../admin-users/admin-permissions";
+import { AdminRolePermissionsService } from "../admin-users/admin-role-permissions.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { RealtimeGateway } from "../realtime/realtime.gateway";
 import { StreamsService } from "../streams/streams.service";
@@ -91,6 +96,7 @@ export class ModerationService {
     private readonly realtime: RealtimeGateway,
     private readonly streams: StreamsService,
     private readonly streamStaff: StreamStaffService,
+    private readonly adminRolePermissions: AdminRolePermissionsService,
   ) { }
 
   private room(streamId: string) {
@@ -276,15 +282,38 @@ export class ModerationService {
     return `admin:${adminUserId}`;
   }
 
-  private mapAdminAccount(row: any) {
+  private async canViewRealStaffIdentity(role: AdminRole) {
+    const permissions = await this.adminRolePermissions.getEffectivePermissions(role);
+
+    return hasAdminPermission(
+      permissions,
+      ADMIN_PERMISSIONS.ADMIN_IDENTITY_VIEW_REAL_STAFF,
+    );
+  }
+
+  private mapAdminAccount(row: any, canViewRealStaffIdentity = false) {
     if (!row) return null;
 
+    if (canViewRealStaffIdentity) {
+      return {
+        id: row.id,
+        publicId: null,
+        username: row.email,
+        displayName: String(row.name || row.email).trim() || row.email,
+        avatarUrl: null,
+        displayEmail: row.email ?? "No email",
+        identityVisibility: "real" as const,
+      };
+    }
+
     return {
-      id: row.id,
+      id: null,
       publicId: null,
-      username: row.email,
-      displayName: String(row.name || row.email).trim() || row.email,
+      username: "hidden",
+      displayName: "Staff agent",
       avatarUrl: null,
+      displayEmail: "Hidden",
+      identityVisibility: "anonymous" as const,
     };
   }
 
@@ -300,7 +329,7 @@ export class ModerationService {
     };
   }
 
-  private mapAdminAction(row: any) {
+  private mapAdminAction(row: any, canViewRealStaffIdentity = false) {
     return {
       id: row.id,
       streamId: row.streamId,
@@ -312,7 +341,7 @@ export class ModerationService {
       actor: row.actor
         ? this.mapAdminUser(row.actor)
         : row.actorAdminUser
-          ? this.mapAdminAccount(row.actorAdminUser)
+          ? this.mapAdminAccount(row.actorAdminUser, canViewRealStaffIdentity)
           : null,
       target: this.mapAdminUser(row.target),
       stream: row.stream
@@ -325,7 +354,7 @@ export class ModerationService {
     };
   }
 
-  private mapRestriction(row: any) {
+  private mapRestriction(row: any, canViewRealStaffIdentity = false) {
     return {
       id: row.id,
       streamId: row.streamId,
@@ -339,7 +368,7 @@ export class ModerationService {
       createdBy: row.createdBy
         ? this.mapAdminUser(row.createdBy)
         : row.createdByAdminUser
-          ? this.mapAdminAccount(row.createdByAdminUser)
+          ? this.mapAdminAccount(row.createdByAdminUser, canViewRealStaffIdentity)
           : null,
       stream: row.stream
         ? {
@@ -351,7 +380,7 @@ export class ModerationService {
     };
   }
 
-  private mapStreamBan(row: any) {
+  private mapStreamBan(row: any, canViewRealStaffIdentity = false) {
     const expiresAt = row.expiresAt instanceof Date ? row.expiresAt : null;
 
     return {
@@ -370,7 +399,7 @@ export class ModerationService {
       createdBy: row.createdBy
         ? this.mapAdminUser(row.createdBy)
         : row.createdByAdminUser
-          ? this.mapAdminAccount(row.createdByAdminUser)
+          ? this.mapAdminAccount(row.createdByAdminUser, canViewRealStaffIdentity)
           : null,
     };
   }
@@ -1782,7 +1811,10 @@ export class ModerationService {
     adminUserId: string,
     options: AdminModerationActionsQueryDto = {},
   ) {
-    await this.requireAdmin(adminUserId);
+    const admin = await this.requireAdmin(adminUserId);
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(
+      admin.role as AdminRole,
+    );
 
     const page = this.normalizePage(options.page, 1);
     const pageSize = this.normalizePageSize(options.pageSize, 25);
@@ -1860,6 +1892,12 @@ export class ModerationService {
           },
         },
       ];
+
+      if (!canViewRealStaffIdentity && Array.isArray(where.OR)) {
+        where.OR = where.OR.filter(
+          (clause: any) => !Object.prototype.hasOwnProperty.call(clause, "actorAdminUser"),
+        );
+      }
     }
 
     const [total, items] = await Promise.all([
@@ -1889,7 +1927,9 @@ export class ModerationService {
     ]);
 
     return {
-      items: items.map((item) => this.mapAdminAction(item)),
+      items: items.map((item) =>
+        this.mapAdminAction(item, canViewRealStaffIdentity),
+      ),
       total,
       page,
       pageSize,
@@ -1901,7 +1941,10 @@ export class ModerationService {
     adminUserId: string,
     options: AdminModerationRestrictionsQueryDto = {},
   ) {
-    await this.requireAdmin(adminUserId);
+    const admin = await this.requireAdmin(adminUserId);
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(
+      admin.role as AdminRole,
+    );
 
     const page = this.normalizePage(options.page, 1);
     const pageSize = this.normalizePageSize(options.pageSize, 25);
@@ -1986,6 +2029,17 @@ export class ModerationService {
           ],
         },
       ];
+
+      if (!canViewRealStaffIdentity && Array.isArray(where.AND)) {
+        for (const clause of where.AND as any[]) {
+          if (Array.isArray(clause.OR)) {
+            clause.OR = clause.OR.filter(
+              (item: any) =>
+                !Object.prototype.hasOwnProperty.call(item, "createdByAdminUser"),
+            );
+          }
+        }
+      }
     }
 
     const [total, items] = await Promise.all([
@@ -2015,7 +2069,9 @@ export class ModerationService {
     ]);
 
     return {
-      items: items.map((item) => this.mapRestriction(item)),
+      items: items.map((item) =>
+        this.mapRestriction(item, canViewRealStaffIdentity),
+      ),
       total,
       page,
       pageSize,
@@ -2028,7 +2084,10 @@ export class ModerationService {
     targetUserId: string,
     options: AdminModerationHistoryQueryDto = {},
   ) {
-    await this.requireAdmin(adminUserId);
+    const admin = await this.requireAdmin(adminUserId);
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(
+      admin.role as AdminRole,
+    );
 
     const page = this.normalizePage(options.page, 1);
     const pageSize = this.normalizePageSize(options.pageSize, 20);
@@ -2094,9 +2153,11 @@ export class ModerationService {
 
     return {
       user: this.mapAdminUser(user),
-      actions: actions.map((action) => this.mapAdminAction(action)),
+      actions: actions.map((action) =>
+        this.mapAdminAction(action, canViewRealStaffIdentity),
+      ),
       activeRestrictions: activeRestrictions.map((restriction) =>
-        this.mapRestriction(restriction),
+        this.mapRestriction(restriction, canViewRealStaffIdentity),
       ),
       total,
       page,

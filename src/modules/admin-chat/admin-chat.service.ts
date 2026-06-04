@@ -4,9 +4,14 @@ import {
     NotFoundException,
     UnauthorizedException,
 } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { AdminRole, Prisma } from "@prisma/client";
 
 import { AdminAuditService } from "../admin-audit/admin-audit.service";
+import {
+    ADMIN_PERMISSIONS,
+    hasAdminPermission,
+} from "../admin-users/admin-permissions";
+import { AdminRolePermissionsService } from "../admin-users/admin-role-permissions.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { RealtimeGateway } from "../realtime/realtime.gateway";
 import { AdminChatMessagesQueryDto } from "./dto/admin-chat.dto";
@@ -24,6 +29,7 @@ export class AdminChatService {
         private readonly prisma: PrismaService,
         private readonly realtime: RealtimeGateway,
         private readonly adminAudit: AdminAuditService,
+        private readonly adminRolePermissions: AdminRolePermissionsService,
     ) { }
 
     private normalizePage(value: string | number | undefined, fallback: number) {
@@ -92,6 +98,22 @@ export class AdminChatService {
         where.AND = [clause];
     }
 
+    private async canViewRealStaffIdentity(role: AdminRole) {
+        const permissions = await this.adminRolePermissions.getEffectivePermissions(role);
+
+        return hasAdminPermission(
+            permissions,
+            ADMIN_PERMISSIONS.ADMIN_IDENTITY_VIEW_REAL_STAFF,
+        );
+    }
+
+    private mapStaffAdminId(
+        id: string | null | undefined,
+        canViewRealStaffIdentity = false,
+    ) {
+        return canViewRealStaffIdentity ? id ?? null : null;
+    }
+
     private mapUser(user: any) {
         return {
             id: user.id,
@@ -106,7 +128,7 @@ export class AdminChatService {
         return message?.deletionLabel?.trim() || "Message deleted by an Admin.";
     }
 
-    private mapMessage(message: any) {
+    private mapMessage(message: any, canViewRealStaffIdentity = false) {
         const isDeleted = Boolean(message?.isDeleted);
         const deletionLabel = this.toDeletedLabel(message);
 
@@ -118,7 +140,10 @@ export class AdminChatService {
             createdAt: message.createdAt.toISOString(),
             isDeleted,
             deletedAt: message.deletedAt ? message.deletedAt.toISOString() : null,
-            deletedByAdminUserId: message.deletedByAdminUserId ?? null,
+            deletedByAdminUserId: this.mapStaffAdminId(
+                message.deletedByAdminUserId,
+                canViewRealStaffIdentity,
+            ),
             deletionLabel: isDeleted ? deletionLabel : null,
             user: message.user ? this.mapUser(message.user) : null,
             stream: message.stream
@@ -190,8 +215,14 @@ export class AdminChatService {
         });
     }
 
-    async listMessages(adminUserId: string, query: AdminChatMessagesQueryDto = {}) {
-        await this.requireAdmin(adminUserId);
+    async listMessages(
+        adminUserId: string,
+        query: AdminChatMessagesQueryDto = {},
+    ) {
+        const admin = await this.requireAdmin(adminUserId);
+        const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(
+            admin.role as AdminRole,
+        );
 
         const page = this.normalizePage(query.page, 1);
         const pageSize = this.normalizePageSize(query.pageSize, 25);
@@ -330,7 +361,7 @@ export class AdminChatService {
         ]);
 
         return {
-            items: items.map((item) => this.mapMessage(item)),
+            items: items.map((item) => this.mapMessage(item, canViewRealStaffIdentity)),
             total,
             page,
             pageSize,
@@ -352,7 +383,10 @@ export class AdminChatService {
         id: string,
         requestContext?: AdminAuditRequestContext | null,
     ) {
-        await this.requireAdmin(adminUserId);
+        const admin = await this.requireAdmin(adminUserId);
+        const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(
+            admin.role as AdminRole,
+        );
 
         const item = await this.prisma.chatMessage.findUnique({
             where: { id },
@@ -397,7 +431,10 @@ export class AdminChatService {
                     createdAt: reply.createdAt.toISOString(),
                     isDeleted: Boolean(reply.isDeleted),
                     deletedAt: reply.deletedAt ? reply.deletedAt.toISOString() : null,
-                    deletedByAdminUserId: reply.deletedByAdminUserId ?? null,
+                    deletedByAdminUserId: this.mapStaffAdminId(
+                        reply.deletedByAdminUserId,
+                        canViewRealStaffIdentity,
+                    ),
                     deletionLabel: reply.isDeleted ? this.toDeletedLabel(reply) : null,
                     user: reply.user ? this.mapUser(reply.user) : null,
                 };
@@ -414,7 +451,7 @@ export class AdminChatService {
         });
 
         return {
-            item: this.mapMessage(item),
+            item: this.mapMessage(item, canViewRealStaffIdentity),
             replyToMessage,
         };
     }
@@ -424,7 +461,10 @@ export class AdminChatService {
         id: string,
         requestContext?: AdminAuditRequestContext | null,
     ) {
-        await this.requireAdmin(adminUserId);
+        const admin = await this.requireAdmin(adminUserId);
+        const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(
+            admin.role as AdminRole,
+        );
 
         const existing = await this.prisma.chatMessage.findUnique({
             where: { id },
@@ -462,7 +502,7 @@ export class AdminChatService {
             return {
                 success: true,
                 deletedId: id,
-                item: this.mapMessage(existing),
+                item: this.mapMessage(existing, canViewRealStaffIdentity),
             };
         }
 
@@ -522,7 +562,7 @@ export class AdminChatService {
         return {
             success: true,
             deletedId: id,
-            item: this.mapMessage(updated),
+            item: this.mapMessage(updated, canViewRealStaffIdentity),
         };
     }
 
