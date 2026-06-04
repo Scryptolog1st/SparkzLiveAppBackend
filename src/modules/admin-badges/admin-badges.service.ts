@@ -617,13 +617,13 @@ export class AdminBadgesService {
     dto: RevokeUserBadgeDto = {},
     context: AuditContext = {},
   ) {
-    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(adminRole);
     const resolved = this.resolveSystemVipAssignmentId(assignmentId);
 
     if (!resolved) {
       return null;
     }
 
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(adminRole);
     const { meta, userId } = resolved;
 
     const user = await this.prisma.user.findUnique({
