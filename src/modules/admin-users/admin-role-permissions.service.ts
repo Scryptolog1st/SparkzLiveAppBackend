@@ -31,6 +31,10 @@ export class AdminRolePermissionsService {
         "ANALYST",
     ];
 
+    // Process-local cache: the current Docker Compose deployment runs a single
+    // API service instance. If the API is horizontally scaled, this intentionally
+    // accepts a TTL-bounded stale-permission window of up to 30 seconds unless a
+    // shared cache/pub-sub invalidation layer is added.
     private readonly effectivePermissionsCacheTtlMs = 30_000;
 
     private readonly effectivePermissionsCache = new Map<
