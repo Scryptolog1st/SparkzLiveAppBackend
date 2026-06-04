@@ -531,6 +531,49 @@ enum NotificationType {
   MODERATION
 }
 
+enum HelpdeskTicketStatus {
+  OPEN
+  PENDING_ADMIN
+  PENDING_USER
+  ESCALATED
+  RESOLVED
+  CLOSED
+}
+
+enum HelpdeskTicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum HelpdeskTicketSource {
+  USER
+  ADMIN
+  EMAIL
+  LIVE_CHAT
+  SYSTEM
+}
+
+enum HelpdeskTicketMessageSenderType {
+  USER
+  STAFF
+  SYSTEM
+}
+
+enum HelpdeskTicketEventType {
+  TICKET_CREATED
+  MESSAGE_ADDED
+  INTERNAL_NOTE_ADDED
+  ASSIGNED
+  STATUS_CHANGED
+  PRIORITY_CHANGED
+  CATEGORY_CHANGED
+  CLOSED
+  REOPENED
+  ESCALATED
+}
+
 model User {
   id                 String    @id @default(uuid()) @db.Uuid
   email              String    @unique
@@ -611,6 +654,10 @@ model User {
 
   notifications Notification[]
 
+  helpdeskTickets             HelpdeskTicket[]             @relation("HelpdeskTicketUser")
+  helpdeskMessagesSent        HelpdeskTicketMessage[]      @relation("HelpdeskMessageSenderUser")
+  helpdeskTicketEventsActed   HelpdeskTicketEvent[]        @relation("HelpdeskEventActorUser")
+
   submittedReports Report[] @relation("ReportReporter")
   reportsAsTarget  Report[] @relation("ReportTargetUser")
 
@@ -681,6 +728,12 @@ model AdminUser {
   pausedAdvertisements           Advertisement[]         @relation("AdvertisementPausedByAdmin")
 
   reviewedBanAppeals BanAppeal[] @relation("BanAppealReviewer")
+
+  assignedHelpdeskTickets       HelpdeskTicket[]             @relation("HelpdeskTicketAssignedAdmin")
+  closedHelpdeskTickets         HelpdeskTicket[]             @relation("HelpdeskTicketClosedBy")
+  helpdeskMessagesSent          HelpdeskTicketMessage[]      @relation("HelpdeskMessageSenderAdminUser")
+  helpdeskInternalNotes         HelpdeskTicketInternalNote[] @relation("HelpdeskInternalNoteAdminUser")
+  helpdeskTicketEventsActed     HelpdeskTicketEvent[]        @relation("HelpdeskEventActorAdminUser")
 
   @@index([role])
   @@index([isActive])
@@ -760,6 +813,116 @@ model AdminAuditLog {
   @@index([targetPayoutRequestId, createdAt])
   @@index([targetSupportTicketId, createdAt])
   @@map("admin_audit_logs")
+}
+
+model HelpdeskCategory {
+  id          String   @id @default(uuid()) @db.Uuid
+  key         String   @unique @db.VarChar(80)
+  name        String   @db.VarChar(120)
+  description String?  @db.VarChar(500)
+  isActive    Boolean  @default(true) @map("is_active")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tickets HelpdeskTicket[]
+
+  @@index([isActive, sortOrder])
+  @@map("helpdesk_categories")
+}
+
+model HelpdeskTicket {
+  id                    String                 @id @default(uuid()) @db.Uuid
+  ticketNumber          String                 @unique @map("ticket_number") @db.VarChar(32)
+  userId                String                 @map("user_id") @db.Uuid
+  assignedAdminUserId   String?                @map("assigned_admin_user_id") @db.Uuid
+  categoryId            String?                @map("category_id") @db.Uuid
+  subject               String                 @db.VarChar(160)
+  status                HelpdeskTicketStatus   @default(OPEN)
+  priority              HelpdeskTicketPriority @default(NORMAL)
+  source                HelpdeskTicketSource   @default(USER)
+  metadataJson          Json?                  @map("metadata_json")
+  createdAt             DateTime               @default(now()) @map("created_at")
+  updatedAt             DateTime               @updatedAt @map("updated_at")
+  lastMessageAt         DateTime?              @map("last_message_at")
+  closedAt              DateTime?              @map("closed_at")
+  closedByAdminUserId   String?                @map("closed_by_admin_user_id") @db.Uuid
+
+  user                User?             @relation("HelpdeskTicketUser", fields: [userId], references: [id], onDelete: Cascade)
+  assignedAdminUser   AdminUser?        @relation("HelpdeskTicketAssignedAdmin", fields: [assignedAdminUserId], references: [id], onDelete: SetNull)
+  closedByAdminUser   AdminUser?        @relation("HelpdeskTicketClosedBy", fields: [closedByAdminUserId], references: [id], onDelete: SetNull)
+  category            HelpdeskCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  messages            HelpdeskTicketMessage[]
+  internalNotes       HelpdeskTicketInternalNote[]
+  events              HelpdeskTicketEvent[]
+
+  @@index([userId, createdAt])
+  @@index([status, priority, createdAt])
+  @@index([assignedAdminUserId, status])
+  @@index([categoryId, status])
+  @@index([lastMessageAt])
+  @@map("helpdesk_tickets")
+}
+
+model HelpdeskTicketMessage {
+  id                  String                          @id @default(uuid()) @db.Uuid
+  ticketId            String                          @map("ticket_id") @db.Uuid
+  senderType          HelpdeskTicketMessageSenderType @map("sender_type")
+  senderUserId        String?                         @map("sender_user_id") @db.Uuid
+  senderAdminUserId   String?                         @map("sender_admin_user_id") @db.Uuid
+  body                String                          @db.Text
+  attachmentsJson     Json?                           @map("attachments_json")
+  createdAt           DateTime                        @default(now()) @map("created_at")
+  editedAt            DateTime?                       @map("edited_at")
+  deletedAt           DateTime?                       @map("deleted_at")
+
+  ticket          HelpdeskTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  senderUser      User?          @relation("HelpdeskMessageSenderUser", fields: [senderUserId], references: [id], onDelete: SetNull)
+  senderAdminUser AdminUser?     @relation("HelpdeskMessageSenderAdminUser", fields: [senderAdminUserId], references: [id], onDelete: SetNull)
+
+  @@index([ticketId, createdAt])
+  @@index([senderUserId, createdAt])
+  @@index([senderAdminUserId, createdAt])
+  @@map("helpdesk_ticket_messages")
+}
+
+model HelpdeskTicketInternalNote {
+  id          String    @id @default(uuid()) @db.Uuid
+  ticketId    String    @map("ticket_id") @db.Uuid
+  adminUserId String    @map("admin_user_id") @db.Uuid
+  body        String    @db.Text
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  ticket    HelpdeskTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  adminUser AdminUser      @relation("HelpdeskInternalNoteAdminUser", fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@index([adminUserId, createdAt])
+  @@map("helpdesk_ticket_internal_notes")
+}
+
+model HelpdeskTicketEvent {
+  id                  String                  @id @default(uuid()) @db.Uuid
+  ticketId            String                  @map("ticket_id") @db.Uuid
+  actorUserId         String?                 @map("actor_user_id") @db.Uuid
+  actorAdminUserId    String?                 @map("actor_admin_user_id") @db.Uuid
+  eventType           HelpdeskTicketEventType @map("event_type")
+  beforeJson          Json?                   @map("before_json")
+  afterJson           Json?                   @map("after_json")
+  metadataJson        Json?                   @map("metadata_json")
+  createdAt           DateTime                @default(now()) @map("created_at")
+
+  ticket          HelpdeskTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  actorUser       User?          @relation("HelpdeskEventActorUser", fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorAdminUser  AdminUser?     @relation("HelpdeskEventActorAdminUser", fields: [actorAdminUserId], references: [id], onDelete: SetNull)
+
+  @@index([ticketId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([actorAdminUserId, createdAt])
+  @@index([eventType, createdAt])
+  @@map("helpdesk_ticket_events")
 }
 
 model PayoutRequest {
