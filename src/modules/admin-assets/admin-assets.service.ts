@@ -6,12 +6,19 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import {
+  AdminRole,
   AssetSubmissionStatus,
   AssetSubmissionType,
   Prisma,
   StreamStatus,
 } from "@prisma/client";
 
+import { getAnonymousStaffLabel } from "../admin-users/admin-identity-utils";
+import {
+  ADMIN_PERMISSIONS,
+  hasAdminPermission,
+} from "../admin-users/admin-permissions";
+import { AdminRolePermissionsService } from "../admin-users/admin-role-permissions.service";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   AdminAssetsQueryDto,
@@ -46,7 +53,10 @@ export class AdminAssetsService {
     AssetSubmissionType.PROFILE_BANNER,
   ];
 
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly adminRolePermissions: AdminRolePermissionsService,
+  ) { }
 
   private normalizePage(value: string | number | undefined, fallback: number) {
     const parsed = Number(value);
@@ -270,6 +280,15 @@ export class AdminAssetsService {
     return adminUser;
   }
 
+  private async canViewRealStaffIdentity(role: AdminRole) {
+    const permissions = await this.adminRolePermissions.getEffectivePermissions(role);
+
+    return hasAdminPermission(
+      permissions,
+      ADMIN_PERMISSIONS.ADMIN_IDENTITY_VIEW_REAL_STAFF,
+    );
+  }
+
   private mapUser(user: any) {
     return {
       id: user.id,
@@ -281,7 +300,52 @@ export class AdminAssetsService {
     };
   }
 
-  private mapQueueItem(item: any, context: QueueContext) {
+  private mapStaffIdentity(actor: any, canViewRealStaffIdentity: boolean) {
+    if (!actor) {
+      return null;
+    }
+
+    const fallbackName =
+      actor.name?.trim?.() ||
+      actor.profile?.displayName?.trim?.() ||
+      actor.username ||
+      "Staff agent";
+
+    if (canViewRealStaffIdentity) {
+      return {
+        id: actor.id,
+        email: actor.email ?? null,
+        name: fallbackName,
+        role: actor.role ?? null,
+        isActive: actor.isActive ?? true,
+        displayName: fallbackName,
+        displayEmail: actor.email ?? "No email",
+        identityVisibility: "real" as const,
+      };
+    }
+
+    const anonymousName = getAnonymousStaffLabel({
+      id: actor.id,
+      role: actor.role,
+    });
+
+    return {
+      id: null,
+      email: "hidden",
+      name: anonymousName,
+      role: actor.role ?? null,
+      isActive: actor.isActive ?? true,
+      displayName: anonymousName,
+      displayEmail: "Hidden",
+      identityVisibility: "anonymous" as const,
+    };
+  }
+
+  private mapQueueItem(
+    item: any,
+    context: QueueContext,
+    canViewRealStaffIdentity = false,
+  ) {
     const liveStream = context.liveStreamByUserId.get(item.userId) ?? null;
 
     return {
@@ -295,7 +359,7 @@ export class AdminAssetsService {
       createdAt: item.createdAt.toISOString(),
       updatedAt: item.updatedAt.toISOString(),
       user: item.user ? this.mapUser(item.user) : null,
-      reviewedBy: item.reviewedBy ? this.mapUser(item.reviewedBy) : null,
+      reviewedBy: this.mapStaffIdentity(item.reviewedBy, canViewRealStaffIdentity),
       liveStream: liveStream
         ? {
           id: liveStream.id,
@@ -310,7 +374,7 @@ export class AdminAssetsService {
     };
   }
 
-  private mapRestriction(item: any) {
+  private mapRestriction(item: any, canViewRealStaffIdentity = false) {
     return {
       id: item.id,
       kind: item.kind,
@@ -323,11 +387,11 @@ export class AdminAssetsService {
           title: item.stream.title,
         }
         : null,
-      createdBy: item.createdBy ? this.mapUser(item.createdBy) : null,
+      createdBy: this.mapStaffIdentity(item.createdBy, canViewRealStaffIdentity),
     };
   }
 
-  private mapModerationAction(item: any) {
+  private mapModerationAction(item: any, canViewRealStaffIdentity = false) {
     return {
       id: item.id,
       action: item.action,
@@ -341,7 +405,7 @@ export class AdminAssetsService {
           title: item.stream.title,
         }
         : null,
-      actor: item.actor ? this.mapUser(item.actor) : null,
+      actor: this.mapStaffIdentity(item.actor, canViewRealStaffIdentity),
     };
   }
 
@@ -647,7 +711,8 @@ export class AdminAssetsService {
   }
 
   async list(adminUserId: string, query: AdminAssetsQueryDto = {}) {
-    await this.requireAdmin(adminUserId);
+    const admin = await this.requireAdmin(adminUserId);
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(admin.role);
 
     const now = new Date();
     const page = this.normalizePage(query.page, 1);
@@ -750,7 +815,9 @@ export class AdminAssetsService {
     const context = await this.buildQueueContext(items.map((item) => item.userId));
 
     return {
-      items: items.map((item) => this.mapQueueItem(item, context)),
+      items: items.map((item) =>
+        this.mapQueueItem(item, context, canViewRealStaffIdentity),
+      ),
       total,
       page,
       pageSize,
@@ -766,7 +833,8 @@ export class AdminAssetsService {
   }
 
   async getById(adminUserId: string, id: string) {
-    await this.requireAdmin(adminUserId);
+    const admin = await this.requireAdmin(adminUserId);
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(admin.role);
 
     const item = await this.prisma.assetSubmission.findUnique({
       where: { id },
@@ -847,15 +915,15 @@ export class AdminAssetsService {
 
     return {
       item: {
-        ...this.mapQueueItem(item, context),
+        ...this.mapQueueItem(item, context, canViewRealStaffIdentity),
         activeRestrictions: activeRestrictions.map((row) =>
-          this.mapRestriction(row),
+          this.mapRestriction(row, canViewRealStaffIdentity),
         ),
         recentModerationActions: recentModerationActions.map((row) =>
-          this.mapModerationAction(row),
+          this.mapModerationAction(row, canViewRealStaffIdentity),
         ),
         relatedSubmissions: relatedSubmissions.map((row) =>
-          this.mapQueueItem(row, context),
+          this.mapQueueItem(row, context, canViewRealStaffIdentity),
         ),
       },
     };
@@ -866,7 +934,8 @@ export class AdminAssetsService {
     id: string,
     body: UpdateAdminAssetNotesDto,
   ) {
-    await this.requireAdmin(adminUserId);
+    const admin = await this.requireAdmin(adminUserId);
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(admin.role);
 
     const existing = await this.prisma.assetSubmission.findUnique({
       where: { id },
@@ -906,7 +975,7 @@ export class AdminAssetsService {
 
     return {
       success: true,
-      item: this.mapQueueItem(updated, context),
+      item: this.mapQueueItem(updated, context, canViewRealStaffIdentity),
     };
   }
 
@@ -915,7 +984,8 @@ export class AdminAssetsService {
     id: string,
     body: ApproveAssetSubmissionDto,
   ) {
-    await this.requireAdmin(adminUserId);
+    const admin = await this.requireAdmin(adminUserId);
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(admin.role);
 
     const existing = await this.prisma.assetSubmission.findUnique({
       where: { id },
@@ -1001,7 +1071,7 @@ export class AdminAssetsService {
 
     return {
       success: true,
-      item: this.mapQueueItem(updated, context),
+      item: this.mapQueueItem(updated, context, canViewRealStaffIdentity),
     };
   }
 
@@ -1010,7 +1080,8 @@ export class AdminAssetsService {
     id: string,
     body: RejectAssetSubmissionDto,
   ) {
-    await this.requireAdmin(adminUserId);
+    const admin = await this.requireAdmin(adminUserId);
+    const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(admin.role);
 
     const existing = await this.prisma.assetSubmission.findUnique({
       where: { id },
@@ -1052,7 +1123,7 @@ export class AdminAssetsService {
 
     return {
       success: true,
-      item: this.mapQueueItem(updated, context),
+      item: this.mapQueueItem(updated, context, canViewRealStaffIdentity),
     };
   }
 
