@@ -88,6 +88,39 @@ export class HelpdeskService {
         return value as Prisma.InputJsonObject;
     }
 
+    private maskStaffAdminIdsInHelpdeskJson(
+        value: unknown,
+        canViewRealStaffIdentity = false,
+    ): unknown {
+        if (canViewRealStaffIdentity || value === null || value === undefined) {
+            return value;
+        }
+
+        if (Array.isArray(value)) {
+            return value.map((item) =>
+                this.maskStaffAdminIdsInHelpdeskJson(item, canViewRealStaffIdentity),
+            );
+        }
+
+        if (typeof value !== "object") {
+            return value;
+        }
+
+        const output: Record<string, unknown> = {};
+
+        for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+            output[key] =
+                /AdminUserId$/i.test(key)
+                    ? null
+                    : this.maskStaffAdminIdsInHelpdeskJson(
+                        item,
+                        canViewRealStaffIdentity,
+                    );
+        }
+
+        return output;
+    }
+
     private parseStatus(raw?: string) {
         const value = String(raw || "").trim().toUpperCase();
 
@@ -282,9 +315,18 @@ export class HelpdeskService {
         return {
             id: event.id,
             eventType: event.eventType,
-            before: event.beforeJson ?? null,
-            after: event.afterJson ?? null,
-            metadata: event.metadataJson ?? null,
+            before: this.maskStaffAdminIdsInHelpdeskJson(
+                event.beforeJson,
+                canViewRealStaffIdentity,
+            ) as Record<string, unknown> | null,
+            after: this.maskStaffAdminIdsInHelpdeskJson(
+                event.afterJson,
+                canViewRealStaffIdentity,
+            ) as Record<string, unknown> | null,
+            metadata: this.maskStaffAdminIdsInHelpdeskJson(
+                event.metadataJson,
+                canViewRealStaffIdentity,
+            ) as Record<string, unknown> | null,
             createdAt: event.createdAt.toISOString(),
             actorUser: this.mapUser(event.actorUser),
             actorStaff: this.mapAdminUser(event.actorAdminUser, canViewRealStaffIdentity),
@@ -474,10 +516,10 @@ export class HelpdeskService {
                 ticketNumber: args.ticket.ticketNumber,
                 status: args.ticket.status,
                 priority: args.ticket.priority,
-                assignedAdminUserId:
+                hasAssignedAdminUser: Boolean(
                     args.ticket.assignedAdminUserId ??
-                    args.ticket.assignedAdminUser?.id ??
-                    null,
+                    args.ticket.assignedAdminUser?.id,
+                ),
                 ...(args.metadata || {}),
             },
         });
