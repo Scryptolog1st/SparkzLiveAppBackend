@@ -38,7 +38,24 @@ CREATE TABLE "helpdesk_live_chat_messages" (
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "deleted_at" TIMESTAMP(3),
 
-    CONSTRAINT "helpdesk_live_chat_messages_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "helpdesk_live_chat_messages_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "helpdesk_live_chat_messages_sender_identity_chk" CHECK (
+        (
+            "sender_type" = 'USER'
+            AND "sender_user_id" IS NOT NULL
+            AND "sender_admin_user_id" IS NULL
+        )
+        OR (
+            "sender_type" = 'STAFF'
+            AND "sender_admin_user_id" IS NOT NULL
+            AND "sender_user_id" IS NULL
+        )
+        OR (
+            "sender_type" = 'SYSTEM'
+            AND "sender_user_id" IS NULL
+            AND "sender_admin_user_id" IS NULL
+        )
+    )
 );
 
 -- CreateIndex
