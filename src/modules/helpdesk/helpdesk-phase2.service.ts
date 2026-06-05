@@ -691,12 +691,18 @@ export class HelpdeskPhase2Service {
             }),
             this.prisma.helpdeskLiveChatThread.update({
                 where: { id: existing.id },
-                data: {
-                    status: claimIsActive
-                        ? HelpdeskLiveChatThreadStatus.ACTIVE
-                        : HelpdeskLiveChatThreadStatus.WAITING,
-                    lastMessageAt: now,
-                },
+                data: claimIsActive
+                    ? {
+                        status: HelpdeskLiveChatThreadStatus.ACTIVE,
+                        lastMessageAt: now,
+                    }
+                    : {
+                        status: HelpdeskLiveChatThreadStatus.WAITING,
+                        claimedByAdminUserId: null,
+                        claimedAt: null,
+                        claimExpiresAt: null,
+                        lastMessageAt: now,
+                    },
             }),
         ]);
 
@@ -712,6 +718,7 @@ export class HelpdeskPhase2Service {
         const status = this.parseLiveChatStatus(query.status);
         const assignment = this.parseLiveChatAssignment(query.assignment);
         const search = this.normalizeOptionalString(query.search);
+        const now = new Date();
 
         const andFilters: Prisma.HelpdeskLiveChatThreadWhereInput[] = [];
 
@@ -724,15 +731,27 @@ export class HelpdeskPhase2Service {
         }
 
         if (assignment === "claimed") {
-            andFilters.push({ claimedByAdminUserId: { not: null } });
+            andFilters.push({
+                claimedByAdminUserId: { not: null },
+                claimExpiresAt: { gt: now },
+            });
         }
 
         if (assignment === "unclaimed") {
-            andFilters.push({ claimedByAdminUserId: null });
+            andFilters.push({
+                OR: [
+                    { claimedByAdminUserId: null },
+                    { claimExpiresAt: null },
+                    { claimExpiresAt: { lte: now } },
+                ],
+            });
         }
 
         if (assignment === "mine") {
-            andFilters.push({ claimedByAdminUserId: adminUserId });
+            andFilters.push({
+                claimedByAdminUserId: adminUserId,
+                claimExpiresAt: { gt: now },
+            });
         }
 
         if (search) {
@@ -818,42 +837,69 @@ export class HelpdeskPhase2Service {
     ) {
         const actor = await this.requireAdmin(adminUserId);
         const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(actor.role);
-
-        const existing = await this.prisma.helpdeskLiveChatThread.findUnique({
-            where: { id },
-            include: this.liveChatThreadInclude(true),
-        });
-
-        if (!existing) {
-            throw new NotFoundException("Helpdesk live chat thread not found.");
-        }
-
-        if (
-            existing.status === HelpdeskLiveChatThreadStatus.CLOSED ||
-            existing.status === HelpdeskLiveChatThreadStatus.CONVERTED_TO_TICKET
-        ) {
-            throw new BadRequestException("This live chat thread is no longer active.");
-        }
-
         const now = new Date();
-        const claimIsActive =
-            existing.claimedByAdminUserId &&
-            existing.claimExpiresAt &&
-            existing.claimExpiresAt > now;
+        const claimExpiresAt = new Date(now.getTime() + this.liveChatClaimMs);
 
-        if (claimIsActive && existing.claimedByAdminUserId !== adminUserId) {
-            throw new ConflictException("This live chat thread is already claimed by another staff member.");
-        }
+        const updated = await this.prisma.$transaction(async (tx) => {
+            const claimResult = await tx.helpdeskLiveChatThread.updateMany({
+                where: {
+                    id,
+                    status: {
+                        notIn: [
+                            HelpdeskLiveChatThreadStatus.CLOSED,
+                            HelpdeskLiveChatThreadStatus.CONVERTED_TO_TICKET,
+                        ],
+                    },
+                    OR: [
+                        { claimedByAdminUserId: null },
+                        { claimExpiresAt: null },
+                        { claimExpiresAt: { lte: now } },
+                        { claimedByAdminUserId: adminUserId },
+                    ],
+                },
+                data: {
+                    status: HelpdeskLiveChatThreadStatus.ACTIVE,
+                    claimedByAdminUserId: adminUserId,
+                    claimedAt: now,
+                    claimExpiresAt,
+                },
+            });
 
-        const updated = await this.prisma.helpdeskLiveChatThread.update({
-            where: { id: existing.id },
-            data: {
-                status: HelpdeskLiveChatThreadStatus.ACTIVE,
-                claimedByAdminUserId: adminUserId,
-                claimedAt: now,
-                claimExpiresAt: new Date(now.getTime() + this.liveChatClaimMs),
-            },
-            include: this.liveChatThreadInclude(true),
+            if (claimResult.count !== 1) {
+                const current = await tx.helpdeskLiveChatThread.findUnique({
+                    where: { id },
+                    select: {
+                        id: true,
+                        status: true,
+                        claimedByAdminUserId: true,
+                        claimExpiresAt: true,
+                    },
+                });
+
+                if (!current) {
+                    throw new NotFoundException("Helpdesk live chat thread not found.");
+                }
+
+                if (
+                    current.status === HelpdeskLiveChatThreadStatus.CLOSED ||
+                    current.status === HelpdeskLiveChatThreadStatus.CONVERTED_TO_TICKET
+                ) {
+                    throw new BadRequestException("This live chat thread is no longer active.");
+                }
+
+                throw new ConflictException("This live chat thread is already claimed by another staff member.");
+            }
+
+            const updatedThread = await tx.helpdeskLiveChatThread.findUnique({
+                where: { id },
+                include: this.liveChatThreadInclude(true),
+            });
+
+            if (!updatedThread) {
+                throw new NotFoundException("Helpdesk live chat thread not found.");
+            }
+
+            return updatedThread;
         });
 
         await this.writeAudit({
@@ -939,56 +985,79 @@ export class HelpdeskPhase2Service {
             throw new BadRequestException("Live chat message is required.");
         }
 
-        const existing = await this.prisma.helpdeskLiveChatThread.findUnique({
-            where: { id },
-            include: this.liveChatThreadInclude(true),
-        });
-
-        if (!existing) {
-            throw new NotFoundException("Helpdesk live chat thread not found.");
-        }
-
-        if (
-            existing.status === HelpdeskLiveChatThreadStatus.CLOSED ||
-            existing.status === HelpdeskLiveChatThreadStatus.CONVERTED_TO_TICKET
-        ) {
-            throw new BadRequestException("This live chat thread is no longer active.");
-        }
-
         const now = new Date();
-        const claimIsActive =
-            existing.claimedByAdminUserId &&
-            existing.claimExpiresAt &&
-            existing.claimExpiresAt > now;
+        const claimExpiresAt = new Date(now.getTime() + this.liveChatClaimMs);
 
-        if (claimIsActive && existing.claimedByAdminUserId !== adminUserId) {
-            throw new ConflictException("This live chat thread is claimed by another staff member.");
-        }
-
-        await this.prisma.$transaction([
-            this.prisma.helpdeskLiveChatMessage.create({
+        const updated = await this.prisma.$transaction(async (tx) => {
+            const claimResult = await tx.helpdeskLiveChatThread.updateMany({
+                where: {
+                    id,
+                    status: {
+                        notIn: [
+                            HelpdeskLiveChatThreadStatus.CLOSED,
+                            HelpdeskLiveChatThreadStatus.CONVERTED_TO_TICKET,
+                        ],
+                    },
+                    OR: [
+                        { claimedByAdminUserId: null },
+                        { claimExpiresAt: null },
+                        { claimExpiresAt: { lte: now } },
+                        { claimedByAdminUserId: adminUserId },
+                    ],
+                },
                 data: {
-                    threadId: existing.id,
+                    status: HelpdeskLiveChatThreadStatus.ACTIVE,
+                    claimedByAdminUserId: adminUserId,
+                    claimedAt: now,
+                    claimExpiresAt,
+                    lastMessageAt: now,
+                },
+            });
+
+            if (claimResult.count !== 1) {
+                const current = await tx.helpdeskLiveChatThread.findUnique({
+                    where: { id },
+                    select: {
+                        id: true,
+                        status: true,
+                        claimedByAdminUserId: true,
+                        claimExpiresAt: true,
+                    },
+                });
+
+                if (!current) {
+                    throw new NotFoundException("Helpdesk live chat thread not found.");
+                }
+
+                if (
+                    current.status === HelpdeskLiveChatThreadStatus.CLOSED ||
+                    current.status === HelpdeskLiveChatThreadStatus.CONVERTED_TO_TICKET
+                ) {
+                    throw new BadRequestException("This live chat thread is no longer active.");
+                }
+
+                throw new ConflictException("This live chat thread is claimed by another staff member.");
+            }
+
+            await tx.helpdeskLiveChatMessage.create({
+                data: {
+                    threadId: id,
                     senderType: HelpdeskLiveChatMessageSenderType.STAFF,
                     senderAdminUserId: adminUserId,
                     body: messageBody,
                 },
-            }),
-            this.prisma.helpdeskLiveChatThread.update({
-                where: { id: existing.id },
-                data: {
-                    status: HelpdeskLiveChatThreadStatus.ACTIVE,
-                    claimedByAdminUserId: adminUserId,
-                    claimedAt: existing.claimedAt ?? now,
-                    claimExpiresAt: new Date(now.getTime() + this.liveChatClaimMs),
-                    lastMessageAt: now,
-                },
-            }),
-        ]);
+            });
 
-        const updated = await this.prisma.helpdeskLiveChatThread.findUnique({
-            where: { id: existing.id },
-            include: this.liveChatThreadInclude(true),
+            const updatedThread = await tx.helpdeskLiveChatThread.findUnique({
+                where: { id },
+                include: this.liveChatThreadInclude(true),
+            });
+
+            if (!updatedThread) {
+                throw new NotFoundException("Helpdesk live chat thread not found.");
+            }
+
+            return updatedThread;
         });
 
         await this.writeAudit({
@@ -997,9 +1066,9 @@ export class HelpdeskPhase2Service {
             actionCode: "helpdesk.live_chat.message",
             actionLabel: "Sent helpdesk live chat message",
             resourceType: "HELPDESK_LIVE_CHAT",
-            resourceId: existing.id,
-            resourceName: existing.subject,
-            targetUserId: existing.userId,
+            resourceId: updated.id,
+            resourceName: updated.subject,
+            targetUserId: updated.userId,
             metadata: { senderType: HelpdeskLiveChatMessageSenderType.STAFF },
             requestContext,
         });
@@ -1080,7 +1149,15 @@ export class HelpdeskPhase2Service {
         }
 
         if (existing.convertedTicketId) {
-            throw new BadRequestException("This live chat thread has already been converted to a ticket.");
+            if (!existing.convertedTicket) {
+                throw new BadRequestException("This live chat thread references a missing converted ticket.");
+            }
+
+            return {
+                success: true,
+                ticket: this.mapTicketListItem(existing.convertedTicket, canViewRealStaffIdentity),
+                thread: this.mapLiveChatThread(existing, canViewRealStaffIdentity, true),
+            };
         }
 
         const priority = this.parsePriority(body.priority) ?? HelpdeskTicketPriority.NORMAL;
@@ -1102,7 +1179,43 @@ export class HelpdeskPhase2Service {
                 ? HelpdeskTicketStatus.PENDING_ADMIN
                 : HelpdeskTicketStatus.PENDING_USER;
 
-        const createdTicket = await this.prisma.$transaction(async (tx) => {
+        const conversionResult: any = await this.prisma.$transaction(async (tx) => {
+            const reserveResult = await tx.helpdeskLiveChatThread.updateMany({
+                where: {
+                    id: existing.id,
+                    convertedTicketId: null,
+                },
+                data: {
+                    status: HelpdeskLiveChatThreadStatus.CONVERTED_TO_TICKET,
+                    closedAt: now,
+                    closedByAdminUserId: adminUserId,
+                    claimedByAdminUserId: null,
+                    claimedAt: null,
+                    claimExpiresAt: null,
+                },
+            });
+
+            if (reserveResult.count !== 1) {
+                const current = await tx.helpdeskLiveChatThread.findUnique({
+                    where: { id: existing.id },
+                    include: this.liveChatThreadInclude(true),
+                });
+
+                if (!current) {
+                    throw new NotFoundException("Helpdesk live chat thread not found.");
+                }
+
+                if (current.convertedTicketId && current.convertedTicket) {
+                    return {
+                        created: false,
+                        ticket: current.convertedTicket,
+                        thread: current,
+                    };
+                }
+
+                throw new ConflictException("This live chat thread could not be converted because it changed during conversion.");
+            }
+
             const ticket = await tx.helpdeskTicket.create({
                 data: {
                     ticketNumber,
@@ -1163,47 +1276,45 @@ export class HelpdeskPhase2Service {
                 },
             });
 
-            await tx.helpdeskLiveChatThread.update({
+            const thread = await tx.helpdeskLiveChatThread.update({
                 where: { id: existing.id },
                 data: {
-                    status: HelpdeskLiveChatThreadStatus.CONVERTED_TO_TICKET,
                     convertedTicketId: ticket.id,
-                    closedAt: now,
-                    closedByAdminUserId: adminUserId,
-                    claimedByAdminUserId: null,
-                    claimExpiresAt: null,
                 },
+                include: this.liveChatThreadInclude(true),
             });
 
-            return ticket;
+            return {
+                created: true,
+                ticket,
+                thread,
+            };
         });
 
-        await this.writeAudit({
-            actorAdminUserId: adminUserId,
-            actionType: "CREATE",
-            actionCode: "helpdesk.live_chat.convert_to_ticket",
-            actionLabel: "Converted helpdesk live chat to ticket",
-            resourceType: "HELPDESK_LIVE_CHAT",
-            resourceId: existing.id,
-            resourceName: existing.subject,
-            targetUserId: existing.userId,
-            targetSupportTicketId: createdTicket.id,
-            metadata: {
-                ticketId: createdTicket.id,
-                ticketNumber: createdTicket.ticketNumber,
-            },
-            requestContext,
-        });
-
-        const updatedThread = await this.prisma.helpdeskLiveChatThread.findUnique({
-            where: { id: existing.id },
-            include: this.liveChatThreadInclude(true),
-        });
+        if (conversionResult.created) {
+            await this.writeAudit({
+                actorAdminUserId: adminUserId,
+                actionType: "CREATE",
+                actionCode: "helpdesk.live_chat.convert_to_ticket",
+                actionLabel: "Converted helpdesk live chat to ticket",
+                resourceType: "HELPDESK_LIVE_CHAT",
+                resourceId: existing.id,
+                resourceName: existing.subject,
+                targetUserId: existing.userId,
+                targetSupportTicketId: conversionResult.ticket.id,
+                metadata: {
+                    ticketId: conversionResult.ticket.id,
+                    ticketNumber: conversionResult.ticket.ticketNumber,
+                },
+                requestContext,
+            });
+        }
 
         return {
             success: true,
-            ticket: this.mapTicketListItem(createdTicket, canViewRealStaffIdentity),
-            thread: this.mapLiveChatThread(updatedThread, canViewRealStaffIdentity, true),
+            ticket: this.mapTicketListItem(conversionResult.ticket, canViewRealStaffIdentity),
+            thread: this.mapLiveChatThread(conversionResult.thread, canViewRealStaffIdentity, true),
         };
     }
+
 }
