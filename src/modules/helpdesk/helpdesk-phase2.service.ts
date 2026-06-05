@@ -1120,6 +1120,10 @@ export class HelpdeskPhase2Service {
                     throw new NotFoundException("Helpdesk live chat thread not found.");
                 }
 
+                if (current.status === HelpdeskLiveChatThreadStatus.CONVERTED_TO_TICKET) {
+                    throw new BadRequestException("This live chat thread is no longer active.");
+                }
+
                 throw new BadRequestException("This live chat thread is already closed.");
             }
 
@@ -1168,11 +1172,12 @@ export class HelpdeskPhase2Service {
             throw new NotFoundException("Helpdesk live chat thread not found.");
         }
 
-        if (
-            existing.status === HelpdeskLiveChatThreadStatus.CLOSED ||
-            existing.status === HelpdeskLiveChatThreadStatus.CONVERTED_TO_TICKET
-        ) {
+        if (existing.status === HelpdeskLiveChatThreadStatus.CLOSED) {
             throw new BadRequestException("This live chat thread is already closed.");
+        }
+
+        if (existing.status === HelpdeskLiveChatThreadStatus.CONVERTED_TO_TICKET) {
+            throw new BadRequestException("This live chat thread is no longer active.");
         }
 
         const closeReason = this.normalizeOptionalString(body.reason);
@@ -1209,6 +1214,10 @@ export class HelpdeskPhase2Service {
 
                 if (!current) {
                     throw new NotFoundException("Helpdesk live chat thread not found.");
+                }
+
+                if (current.status === HelpdeskLiveChatThreadStatus.CONVERTED_TO_TICKET) {
+                    throw new BadRequestException("This live chat thread is no longer active.");
                 }
 
                 throw new BadRequestException("This live chat thread is already closed.");
