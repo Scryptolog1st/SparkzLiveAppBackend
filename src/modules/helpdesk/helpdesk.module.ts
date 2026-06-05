@@ -7,6 +7,7 @@ import { AdminRolePermissionsService } from "../admin-users/admin-role-permissio
 import { PrismaModule } from "../prisma/prisma.module";
 import { AdminHelpdeskController } from "./admin-helpdesk.controller";
 import { HelpdeskController } from "./helpdesk.controller";
+import { HelpdeskPhase2Service } from "./helpdesk-phase2.service";
 import { HelpdeskService } from "./helpdesk.service";
 
 @Module({
@@ -14,10 +15,11 @@ import { HelpdeskService } from "./helpdesk.service";
     controllers: [HelpdeskController, AdminHelpdeskController],
     providers: [
         HelpdeskService,
+        HelpdeskPhase2Service,
         AdminProxyGuard,
         AdminPermissionGuard,
         AdminRolePermissionsService,
     ],
-    exports: [HelpdeskService],
+    exports: [HelpdeskService, HelpdeskPhase2Service],
 })
 export class HelpdeskModule { }

@@ -40,6 +40,37 @@ export class HelpdeskTicketQueryDto {
     pageSize?: string;
 }
 
+export class CreateAdminHelpdeskTicketDto {
+    @IsString()
+    @MaxLength(255)
+    userLookup!: string;
+
+    @IsOptional()
+    @IsUUID()
+    categoryId?: string;
+
+    @IsOptional()
+    @IsUUID()
+    assignedAdminUserId?: string;
+
+    @IsOptional()
+    @IsIn(["LOW", "NORMAL", "HIGH", "URGENT"])
+    priority?: string;
+
+    @IsString()
+    @MaxLength(160)
+    subject!: string;
+
+    @IsString()
+    @MaxLength(5000)
+    body!: string;
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(5000)
+    internalNote?: string;
+}
+
 export class CreateHelpdeskTicketDto {
     @IsOptional()
     @IsUUID()
@@ -110,4 +141,75 @@ export class UpsertHelpdeskCategoryDto {
     @IsInt()
     @Min(0)
     sortOrder?: number;
+}
+
+
+export class HelpdeskLiveChatQueryDto {
+    @IsOptional()
+    @IsIn(["WAITING", "ACTIVE", "CLOSED", "CONVERTED_TO_TICKET"])
+    status?: string;
+
+    @IsOptional()
+    @IsUUID()
+    categoryId?: string;
+
+    @IsOptional()
+    @IsIn(["any", "claimed", "unclaimed", "mine"])
+    assignment?: string;
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(120)
+    search?: string;
+
+    @IsOptional()
+    @IsString()
+    page?: string;
+
+    @IsOptional()
+    @IsString()
+    pageSize?: string;
+}
+
+export class StartHelpdeskLiveChatDto {
+    @IsOptional()
+    @IsUUID()
+    categoryId?: string;
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(160)
+    subject?: string;
+
+    @IsString()
+    @MaxLength(5000)
+    body!: string;
+}
+
+export class ReplyHelpdeskLiveChatDto {
+    @IsString()
+    @MaxLength(5000)
+    body!: string;
+}
+
+export class CloseHelpdeskLiveChatDto {
+    @IsOptional()
+    @IsString()
+    @MaxLength(500)
+    reason?: string;
+}
+
+export class ConvertHelpdeskLiveChatToTicketDto {
+    @IsOptional()
+    @IsString()
+    @MaxLength(160)
+    subject?: string;
+
+    @IsOptional()
+    @IsUUID()
+    categoryId?: string;
+
+    @IsOptional()
+    @IsIn(["LOW", "NORMAL", "HIGH", "URGENT"])
+    priority?: string;
 }
