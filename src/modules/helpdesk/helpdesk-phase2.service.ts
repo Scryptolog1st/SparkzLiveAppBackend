@@ -1076,6 +1076,74 @@ export class HelpdeskPhase2Service {
         return this.mapLiveChatThread(updated, canViewRealStaffIdentity, true);
     }
 
+    async closeUserLiveChatThread(
+        userId: string,
+        id: string,
+        body: CloseHelpdeskLiveChatDto,
+    ) {
+        await this.requireUser(userId);
+
+        const existing = await this.prisma.helpdeskLiveChatThread.findFirst({
+            where: { id, userId },
+            include: this.liveChatThreadInclude(true),
+        });
+
+        if (!existing) {
+            throw new NotFoundException("Helpdesk live chat thread not found.");
+        }
+
+        if (
+            existing.status === HelpdeskLiveChatThreadStatus.CLOSED ||
+            existing.status === HelpdeskLiveChatThreadStatus.CONVERTED_TO_TICKET
+        ) {
+            throw new BadRequestException("This live chat thread is already closed.");
+        }
+
+        const closeReason = this.normalizeOptionalString(body.reason);
+        const now = new Date();
+
+        const updated = await this.prisma.$transaction(async (tx) => {
+            await tx.helpdeskLiveChatThread.update({
+                where: { id: existing.id },
+                data: {
+                    status: HelpdeskLiveChatThreadStatus.CLOSED,
+                    closedAt: now,
+                    closedByAdminUserId: null,
+                    closeReason,
+                    claimedByAdminUserId: null,
+                    claimedAt: null,
+                    claimExpiresAt: null,
+                    lastMessageAt: now,
+                },
+            });
+
+            await tx.helpdeskLiveChatMessage.create({
+                data: {
+                    threadId: existing.id,
+                    senderType: HelpdeskLiveChatMessageSenderType.SYSTEM,
+                    body: "Live chat ended by user.",
+                    metadataJson: this.toJsonObject({
+                        action: "USER_CLOSED_LIVE_CHAT",
+                        reason: closeReason,
+                    }),
+                },
+            });
+
+            const updatedThread = await tx.helpdeskLiveChatThread.findUnique({
+                where: { id: existing.id },
+                include: this.liveChatThreadInclude(true),
+            });
+
+            if (!updatedThread) {
+                throw new NotFoundException("Helpdesk live chat thread not found.");
+            }
+
+            return updatedThread;
+        });
+
+        return this.mapLiveChatThread(updated, false, true);
+    }
+
     async closeLiveChatThread(
         adminUserId: string,
         id: string,
