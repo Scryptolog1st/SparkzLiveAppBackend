@@ -3,6 +3,7 @@ import type { Request } from "express";
 
 import { JwtAuthGuard } from "../auth/jwt/jwt-auth.guard";
 import {
+    CloseHelpdeskLiveChatDto,
     CreateHelpdeskTicketDto,
     HelpdeskLiveChatQueryDto,
     HelpdeskTicketQueryDto,
@@ -56,6 +57,15 @@ export class HelpdeskController {
         @Body() body: ReplyHelpdeskLiveChatDto,
     ) {
         return this.phase2.addUserLiveChatMessage(req.user!.userId, id, body);
+    }
+
+    @Post("live-chat/threads/:id/close")
+    async closeLiveChatThread(
+        @Req() req: JwtReq,
+        @Param("id") id: string,
+        @Body() body: CloseHelpdeskLiveChatDto,
+    ) {
+        return this.phase2.closeUserLiveChatThread(req.user!.userId, id, body);
     }
 
     @Get("tickets")
