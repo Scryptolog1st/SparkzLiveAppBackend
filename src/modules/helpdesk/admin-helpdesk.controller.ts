@@ -17,13 +17,19 @@ import { RequireAdminPermission } from "../admin-users/require-admin-permission.
 import {
     AddHelpdeskInternalNoteDto,
     AssignHelpdeskTicketDto,
+    CloseHelpdeskLiveChatDto,
+    ConvertHelpdeskLiveChatToTicketDto,
+    CreateAdminHelpdeskTicketDto,
+    HelpdeskLiveChatQueryDto,
     HelpdeskTicketQueryDto,
+    ReplyHelpdeskLiveChatDto,
     ReplyHelpdeskTicketDto,
     UpdateHelpdeskTicketCategoryDto,
     UpdateHelpdeskTicketPriorityDto,
     UpdateHelpdeskTicketStatusDto,
     UpsertHelpdeskCategoryDto,
 } from "./dto/helpdesk.dto";
+import { HelpdeskPhase2Service } from "./helpdesk-phase2.service";
 import { HelpdeskService } from "./helpdesk.service";
 
 type AdminRequestContext = {
@@ -36,7 +42,10 @@ type AdminRequestContext = {
 @Controller("admin/helpdesk")
 @UseGuards(AdminProxyGuard, AdminPermissionGuard)
 export class AdminHelpdeskController {
-    constructor(private readonly helpdesk: HelpdeskService) { }
+    constructor(
+        private readonly helpdesk: HelpdeskService,
+        private readonly phase2: HelpdeskPhase2Service,
+    ) { }
 
     private getHeader(req: Request, name: string) {
         const value = req.headers[name];
@@ -89,6 +98,99 @@ export class AdminHelpdeskController {
     ) {
         return this.helpdesk.upsertCategory(
             req.adminUser.id,
+            body,
+            this.buildAuditContext(req),
+        );
+    }
+
+    @Post("tickets")
+    @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_CREATE_TICKETS)
+    async createTicket(
+        @Req() req: any,
+        @Body() body: CreateAdminHelpdeskTicketDto,
+    ) {
+        return this.phase2.createAdminTicket(
+            req.adminUser.id,
+            body,
+            this.buildAuditContext(req),
+        );
+    }
+
+    @Get("live-chat/threads")
+    @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_LIVE_CHAT_VIEW)
+    async listLiveChatThreads(
+        @Req() req: any,
+        @Query() query: HelpdeskLiveChatQueryDto,
+    ) {
+        return this.phase2.listAdminLiveChatThreads(req.adminUser.id, query);
+    }
+
+    @Get("live-chat/threads/:id")
+    @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_LIVE_CHAT_VIEW)
+    async getLiveChatThread(@Req() req: any, @Param("id") id: string) {
+        return this.phase2.getAdminLiveChatThread(req.adminUser.id, id);
+    }
+
+    @Post("live-chat/threads/:id/claim")
+    @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_LIVE_CHAT_MANAGE)
+    async claimLiveChatThread(@Req() req: any, @Param("id") id: string) {
+        return this.phase2.claimLiveChatThread(
+            req.adminUser.id,
+            id,
+            this.buildAuditContext(req),
+        );
+    }
+
+    @Post("live-chat/threads/:id/release")
+    @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_LIVE_CHAT_MANAGE)
+    async releaseLiveChatThread(@Req() req: any, @Param("id") id: string) {
+        return this.phase2.releaseLiveChatThread(
+            req.adminUser.id,
+            id,
+            this.buildAuditContext(req),
+        );
+    }
+
+    @Post("live-chat/threads/:id/messages")
+    @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_LIVE_CHAT_MANAGE)
+    async sendLiveChatMessage(
+        @Req() req: any,
+        @Param("id") id: string,
+        @Body() body: ReplyHelpdeskLiveChatDto,
+    ) {
+        return this.phase2.addAdminLiveChatMessage(
+            req.adminUser.id,
+            id,
+            body,
+            this.buildAuditContext(req),
+        );
+    }
+
+    @Post("live-chat/threads/:id/close")
+    @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_LIVE_CHAT_MANAGE)
+    async closeLiveChatThread(
+        @Req() req: any,
+        @Param("id") id: string,
+        @Body() body: CloseHelpdeskLiveChatDto,
+    ) {
+        return this.phase2.closeLiveChatThread(
+            req.adminUser.id,
+            id,
+            body,
+            this.buildAuditContext(req),
+        );
+    }
+
+    @Post("live-chat/threads/:id/convert-to-ticket")
+    @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_LIVE_CHAT_MANAGE)
+    async convertLiveChatToTicket(
+        @Req() req: any,
+        @Param("id") id: string,
+        @Body() body: ConvertHelpdeskLiveChatToTicketDto,
+    ) {
+        return this.phase2.convertLiveChatToTicket(
+            req.adminUser.id,
+            id,
             body,
             this.buildAuditContext(req),
         );

@@ -181,7 +181,6 @@ enum BattleEndReason {
   MODERATION
 }
 
-
 enum GiftMediaType {
   VIDEO
   LOTTIE
@@ -574,6 +573,19 @@ enum HelpdeskTicketEventType {
   ESCALATED
 }
 
+enum HelpdeskLiveChatThreadStatus {
+  WAITING
+  ACTIVE
+  CLOSED
+  CONVERTED_TO_TICKET
+}
+
+enum HelpdeskLiveChatMessageSenderType {
+  USER
+  STAFF
+  SYSTEM
+}
+
 model User {
   id                 String    @id @default(uuid()) @db.Uuid
   email              String    @unique
@@ -654,9 +666,11 @@ model User {
 
   notifications Notification[]
 
-  helpdeskTickets             HelpdeskTicket[]             @relation("HelpdeskTicketUser")
-  helpdeskMessagesSent        HelpdeskTicketMessage[]      @relation("HelpdeskMessageSenderUser")
-  helpdeskTicketEventsActed   HelpdeskTicketEvent[]        @relation("HelpdeskEventActorUser")
+  helpdeskTickets              HelpdeskTicket[]          @relation("HelpdeskTicketUser")
+  helpdeskMessagesSent         HelpdeskTicketMessage[]   @relation("HelpdeskMessageSenderUser")
+  helpdeskTicketEventsActed    HelpdeskTicketEvent[]     @relation("HelpdeskEventActorUser")
+  helpdeskLiveChatThreads      HelpdeskLiveChatThread[]  @relation("HelpdeskLiveChatUser")
+  helpdeskLiveChatMessagesSent HelpdeskLiveChatMessage[] @relation("HelpdeskLiveChatMessageSenderUser")
 
   submittedReports Report[] @relation("ReportReporter")
   reportsAsTarget  Report[] @relation("ReportTargetUser")
@@ -690,16 +704,15 @@ model User {
   banAppeals                  BanAppeal[]
   assignedBadges              UserBadge[]
 
-
-  battleSessionsCreatedV2       BattleSession[]          @relation("BattleSessionCreatedBy")
-  battleSidesHostedV2           BattleSide[]             @relation("BattleSideHost")
-  battleParticipantsV2          BattleParticipant[]      @relation("BattleParticipantUser")
-  battleInvitesSentV2           BattleInvite[]           @relation("BattleInviteSender")
-  battleInvitesReceivedV2       BattleInvite[]           @relation("BattleInviteRecipient")
-  battleRandomQueueEntriesV2    BattleRandomQueueEntry[] @relation("BattleRandomQueueHost")
-  battleRematchVotesV2          BattleRematchVote[]      @relation("BattleRematchVoteUser")
-  battleSideContribSentV2       BattleSideContribution[] @relation("BattleSideContributionSender")
-  battleSideContribReceivedV2   BattleSideContribution[] @relation("BattleSideContributionRecipient")
+  battleSessionsCreatedV2     BattleSession[]          @relation("BattleSessionCreatedBy")
+  battleSidesHostedV2         BattleSide[]             @relation("BattleSideHost")
+  battleParticipantsV2        BattleParticipant[]      @relation("BattleParticipantUser")
+  battleInvitesSentV2         BattleInvite[]           @relation("BattleInviteSender")
+  battleInvitesReceivedV2     BattleInvite[]           @relation("BattleInviteRecipient")
+  battleRandomQueueEntriesV2  BattleRandomQueueEntry[] @relation("BattleRandomQueueHost")
+  battleRematchVotesV2        BattleRematchVote[]      @relation("BattleRematchVoteUser")
+  battleSideContribSentV2     BattleSideContribution[] @relation("BattleSideContributionSender")
+  battleSideContribReceivedV2 BattleSideContribution[] @relation("BattleSideContributionRecipient")
 
   @@map("users")
 }
@@ -729,11 +742,14 @@ model AdminUser {
 
   reviewedBanAppeals BanAppeal[] @relation("BanAppealReviewer")
 
-  assignedHelpdeskTickets       HelpdeskTicket[]             @relation("HelpdeskTicketAssignedAdmin")
-  closedHelpdeskTickets         HelpdeskTicket[]             @relation("HelpdeskTicketClosedBy")
-  helpdeskMessagesSent          HelpdeskTicketMessage[]      @relation("HelpdeskMessageSenderAdminUser")
-  helpdeskInternalNotes         HelpdeskTicketInternalNote[] @relation("HelpdeskInternalNoteAdminUser")
-  helpdeskTicketEventsActed     HelpdeskTicketEvent[]        @relation("HelpdeskEventActorAdminUser")
+  assignedHelpdeskTickets      HelpdeskTicket[]             @relation("HelpdeskTicketAssignedAdmin")
+  closedHelpdeskTickets        HelpdeskTicket[]             @relation("HelpdeskTicketClosedBy")
+  helpdeskMessagesSent         HelpdeskTicketMessage[]      @relation("HelpdeskMessageSenderAdminUser")
+  helpdeskInternalNotes        HelpdeskTicketInternalNote[] @relation("HelpdeskInternalNoteAdminUser")
+  helpdeskTicketEventsActed    HelpdeskTicketEvent[]        @relation("HelpdeskEventActorAdminUser")
+  claimedHelpdeskLiveChats     HelpdeskLiveChatThread[]     @relation("HelpdeskLiveChatClaimedBy")
+  closedHelpdeskLiveChats      HelpdeskLiveChatThread[]     @relation("HelpdeskLiveChatClosedBy")
+  helpdeskLiveChatMessagesSent HelpdeskLiveChatMessage[]    @relation("HelpdeskLiveChatMessageSenderAdmin")
 
   @@index([role])
   @@index([isActive])
@@ -825,36 +841,38 @@ model HelpdeskCategory {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  tickets HelpdeskTicket[]
+  tickets         HelpdeskTicket[]
+  liveChatThreads HelpdeskLiveChatThread[] @relation("HelpdeskLiveChatCategory")
 
   @@index([isActive, sortOrder])
   @@map("helpdesk_categories")
 }
 
 model HelpdeskTicket {
-  id                    String                 @id @default(uuid()) @db.Uuid
-  ticketNumber          String                 @unique @map("ticket_number") @db.VarChar(32)
-  userId                String                 @map("user_id") @db.Uuid
-  assignedAdminUserId   String?                @map("assigned_admin_user_id") @db.Uuid
-  categoryId            String?                @map("category_id") @db.Uuid
-  subject               String                 @db.VarChar(160)
-  status                HelpdeskTicketStatus   @default(OPEN)
-  priority              HelpdeskTicketPriority @default(NORMAL)
-  source                HelpdeskTicketSource   @default(USER)
-  metadataJson          Json?                  @map("metadata_json")
-  createdAt             DateTime               @default(now()) @map("created_at")
-  updatedAt             DateTime               @updatedAt @map("updated_at")
-  lastMessageAt         DateTime?              @map("last_message_at")
-  closedAt              DateTime?              @map("closed_at")
-  closedByAdminUserId   String?                @map("closed_by_admin_user_id") @db.Uuid
+  id                  String                 @id @default(uuid()) @db.Uuid
+  ticketNumber        String                 @unique @map("ticket_number") @db.VarChar(32)
+  userId              String                 @map("user_id") @db.Uuid
+  assignedAdminUserId String?                @map("assigned_admin_user_id") @db.Uuid
+  categoryId          String?                @map("category_id") @db.Uuid
+  subject             String                 @db.VarChar(160)
+  status              HelpdeskTicketStatus   @default(OPEN)
+  priority            HelpdeskTicketPriority @default(NORMAL)
+  source              HelpdeskTicketSource   @default(USER)
+  metadataJson        Json?                  @map("metadata_json")
+  createdAt           DateTime               @default(now()) @map("created_at")
+  updatedAt           DateTime               @updatedAt @map("updated_at")
+  lastMessageAt       DateTime?              @map("last_message_at")
+  closedAt            DateTime?              @map("closed_at")
+  closedByAdminUserId String?                @map("closed_by_admin_user_id") @db.Uuid
 
-  user                User?             @relation("HelpdeskTicketUser", fields: [userId], references: [id], onDelete: Cascade)
-  assignedAdminUser   AdminUser?        @relation("HelpdeskTicketAssignedAdmin", fields: [assignedAdminUserId], references: [id], onDelete: SetNull)
-  closedByAdminUser   AdminUser?        @relation("HelpdeskTicketClosedBy", fields: [closedByAdminUserId], references: [id], onDelete: SetNull)
-  category            HelpdeskCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  messages            HelpdeskTicketMessage[]
-  internalNotes       HelpdeskTicketInternalNote[]
-  events              HelpdeskTicketEvent[]
+  user                 User?                        @relation("HelpdeskTicketUser", fields: [userId], references: [id], onDelete: Cascade)
+  assignedAdminUser    AdminUser?                   @relation("HelpdeskTicketAssignedAdmin", fields: [assignedAdminUserId], references: [id], onDelete: SetNull)
+  closedByAdminUser    AdminUser?                   @relation("HelpdeskTicketClosedBy", fields: [closedByAdminUserId], references: [id], onDelete: SetNull)
+  category             HelpdeskCategory?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  messages             HelpdeskTicketMessage[]
+  internalNotes        HelpdeskTicketInternalNote[]
+  events               HelpdeskTicketEvent[]
+  sourceLiveChatThread HelpdeskLiveChatThread?      @relation("HelpdeskLiveChatConvertedTicket")
 
   @@index([userId, createdAt])
   @@index([status, priority, createdAt])
@@ -865,16 +883,16 @@ model HelpdeskTicket {
 }
 
 model HelpdeskTicketMessage {
-  id                  String                          @id @default(uuid()) @db.Uuid
-  ticketId            String                          @map("ticket_id") @db.Uuid
-  senderType          HelpdeskTicketMessageSenderType @map("sender_type")
-  senderUserId        String?                         @map("sender_user_id") @db.Uuid
-  senderAdminUserId   String?                         @map("sender_admin_user_id") @db.Uuid
-  body                String                          @db.Text
-  attachmentsJson     Json?                           @map("attachments_json")
-  createdAt           DateTime                        @default(now()) @map("created_at")
-  editedAt            DateTime?                       @map("edited_at")
-  deletedAt           DateTime?                       @map("deleted_at")
+  id                String                          @id @default(uuid()) @db.Uuid
+  ticketId          String                          @map("ticket_id") @db.Uuid
+  senderType        HelpdeskTicketMessageSenderType @map("sender_type")
+  senderUserId      String?                         @map("sender_user_id") @db.Uuid
+  senderAdminUserId String?                         @map("sender_admin_user_id") @db.Uuid
+  body              String                          @db.Text
+  attachmentsJson   Json?                           @map("attachments_json")
+  createdAt         DateTime                        @default(now()) @map("created_at")
+  editedAt          DateTime?                       @map("edited_at")
+  deletedAt         DateTime?                       @map("deleted_at")
 
   ticket          HelpdeskTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   senderUser      User?          @relation("HelpdeskMessageSenderUser", fields: [senderUserId], references: [id], onDelete: SetNull)
@@ -904,25 +922,79 @@ model HelpdeskTicketInternalNote {
 }
 
 model HelpdeskTicketEvent {
-  id                  String                  @id @default(uuid()) @db.Uuid
-  ticketId            String                  @map("ticket_id") @db.Uuid
-  actorUserId         String?                 @map("actor_user_id") @db.Uuid
-  actorAdminUserId    String?                 @map("actor_admin_user_id") @db.Uuid
-  eventType           HelpdeskTicketEventType @map("event_type")
-  beforeJson          Json?                   @map("before_json")
-  afterJson           Json?                   @map("after_json")
-  metadataJson        Json?                   @map("metadata_json")
-  createdAt           DateTime                @default(now()) @map("created_at")
+  id               String                  @id @default(uuid()) @db.Uuid
+  ticketId         String                  @map("ticket_id") @db.Uuid
+  actorUserId      String?                 @map("actor_user_id") @db.Uuid
+  actorAdminUserId String?                 @map("actor_admin_user_id") @db.Uuid
+  eventType        HelpdeskTicketEventType @map("event_type")
+  beforeJson       Json?                   @map("before_json")
+  afterJson        Json?                   @map("after_json")
+  metadataJson     Json?                   @map("metadata_json")
+  createdAt        DateTime                @default(now()) @map("created_at")
 
-  ticket          HelpdeskTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  actorUser       User?          @relation("HelpdeskEventActorUser", fields: [actorUserId], references: [id], onDelete: SetNull)
-  actorAdminUser  AdminUser?     @relation("HelpdeskEventActorAdminUser", fields: [actorAdminUserId], references: [id], onDelete: SetNull)
+  ticket         HelpdeskTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  actorUser      User?          @relation("HelpdeskEventActorUser", fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorAdminUser AdminUser?     @relation("HelpdeskEventActorAdminUser", fields: [actorAdminUserId], references: [id], onDelete: SetNull)
 
   @@index([ticketId, createdAt])
   @@index([actorUserId, createdAt])
   @@index([actorAdminUserId, createdAt])
   @@index([eventType, createdAt])
   @@map("helpdesk_ticket_events")
+}
+
+model HelpdeskLiveChatThread {
+  id                   String                       @id @default(uuid()) @db.Uuid
+  userId               String                       @map("user_id") @db.Uuid
+  categoryId           String?                      @map("category_id") @db.Uuid
+  convertedTicketId    String?                      @unique @map("converted_ticket_id") @db.Uuid
+  subject              String?                      @db.VarChar(160)
+  status               HelpdeskLiveChatThreadStatus @default(WAITING)
+  claimedByAdminUserId String?                      @map("claimed_by_admin_user_id") @db.Uuid
+  claimedAt            DateTime?                    @map("claimed_at")
+  claimExpiresAt       DateTime?                    @map("claim_expires_at")
+  closedAt             DateTime?                    @map("closed_at")
+  closedByAdminUserId  String?                      @map("closed_by_admin_user_id") @db.Uuid
+  closeReason          String?                      @map("close_reason") @db.VarChar(500)
+  metadataJson         Json?                        @map("metadata_json")
+  createdAt            DateTime                     @default(now()) @map("created_at")
+  updatedAt            DateTime                     @updatedAt @map("updated_at")
+  lastMessageAt        DateTime?                    @map("last_message_at")
+
+  user               User                      @relation("HelpdeskLiveChatUser", fields: [userId], references: [id], onDelete: Cascade)
+  category           HelpdeskCategory?         @relation("HelpdeskLiveChatCategory", fields: [categoryId], references: [id], onDelete: SetNull)
+  convertedTicket    HelpdeskTicket?           @relation("HelpdeskLiveChatConvertedTicket", fields: [convertedTicketId], references: [id], onDelete: SetNull)
+  claimedByAdminUser AdminUser?                @relation("HelpdeskLiveChatClaimedBy", fields: [claimedByAdminUserId], references: [id], onDelete: SetNull)
+  closedByAdminUser  AdminUser?                @relation("HelpdeskLiveChatClosedBy", fields: [closedByAdminUserId], references: [id], onDelete: SetNull)
+  messages           HelpdeskLiveChatMessage[]
+
+  @@index([userId, createdAt])
+  @@index([status, lastMessageAt])
+  @@index([claimedByAdminUserId, status])
+  @@index([categoryId, status])
+  @@index([claimExpiresAt])
+  @@map("helpdesk_live_chat_threads")
+}
+
+model HelpdeskLiveChatMessage {
+  id                String                            @id @default(uuid()) @db.Uuid
+  threadId          String                            @map("thread_id") @db.Uuid
+  senderType        HelpdeskLiveChatMessageSenderType @map("sender_type")
+  senderUserId      String?                           @map("sender_user_id") @db.Uuid
+  senderAdminUserId String?                           @map("sender_admin_user_id") @db.Uuid
+  body              String                            @db.Text
+  metadataJson      Json?                             @map("metadata_json")
+  createdAt         DateTime                          @default(now()) @map("created_at")
+  deletedAt         DateTime?                         @map("deleted_at")
+
+  thread          HelpdeskLiveChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  senderUser      User?                  @relation("HelpdeskLiveChatMessageSenderUser", fields: [senderUserId], references: [id], onDelete: SetNull)
+  senderAdminUser AdminUser?             @relation("HelpdeskLiveChatMessageSenderAdmin", fields: [senderAdminUserId], references: [id], onDelete: SetNull)
+
+  @@index([threadId, createdAt])
+  @@index([senderUserId, createdAt])
+  @@index([senderAdminUserId, createdAt])
+  @@map("helpdesk_live_chat_messages")
 }
 
 model PayoutRequest {
@@ -1358,7 +1430,6 @@ model DiamondMilestone {
   @@map("diamond_milestones")
 }
 
-
 model StreamCategory {
   id          String  @id @default(uuid()) @db.Uuid
   name        String  @db.VarChar(80)
@@ -1379,16 +1450,16 @@ model StreamCategory {
 }
 
 model Stream {
-  id         String           @id @default(uuid()) @db.Uuid
-  hostUserId String           @map("host_user_id") @db.Uuid
-  title      String
-  streamCategoryId String? @map("stream_category_id") @db.Uuid
-  color      String?
-  status     StreamStatus
-  visibility StreamVisibility
-  tagsJson   Json             @default("[]") @map("tags_json")
-  startedAt  DateTime         @default(now()) @map("started_at")
-  endedAt    DateTime?        @map("ended_at")
+  id               String           @id @default(uuid()) @db.Uuid
+  hostUserId       String           @map("host_user_id") @db.Uuid
+  title            String
+  streamCategoryId String?          @map("stream_category_id") @db.Uuid
+  color            String?
+  status           StreamStatus
+  visibility       StreamVisibility
+  tagsJson         Json             @default("[]") @map("tags_json")
+  startedAt        DateTime         @default(now()) @map("started_at")
+  endedAt          DateTime?        @map("ended_at")
 
   endedByAdminUserId String? @map("ended_by_admin_user_id") @db.Uuid
   endReason          String? @map("end_reason") @db.VarChar(300)
@@ -1409,7 +1480,7 @@ model Stream {
   host         User                @relation("StreamHost", fields: [hostUserId], references: [id], onDelete: Cascade)
   participants StreamParticipant[]
   chatMessages ChatMessage[]
-  heartStats     StreamHeartStat[]
+  heartStats   StreamHeartStat[]
 
   userRoles            StreamUserRole[]
   staffAssignments     StreamStaffAssignment[]
@@ -1430,7 +1501,6 @@ model Stream {
   guests         Json    @default("[]")
 
   guestRequests StreamGuestRequest[]
-
 
   streamCategory StreamCategory? @relation(fields: [streamCategoryId], references: [id], onDelete: SetNull)
 
@@ -1492,13 +1562,12 @@ model ChatMessage {
   @@map("chat_messages")
 }
 
-
 model StreamHeartStat {
-  id           String   @id @default(uuid()) @db.Uuid
-  streamId     String   @map("stream_id") @db.Uuid
-  senderUserId String   @map("sender_user_id") @db.Uuid
-  hostUserId   String   @map("host_user_id") @db.Uuid
-  count        Int      @default(0)
+  id           String @id @default(uuid()) @db.Uuid
+  streamId     String @map("stream_id") @db.Uuid
+  senderUserId String @map("sender_user_id") @db.Uuid
+  hostUserId   String @map("host_user_id") @db.Uuid
+  count        Int    @default(0)
 
   stream     Stream @relation(fields: [streamId], references: [id], onDelete: Cascade)
   senderUser User   @relation("StreamHeartStatSender", fields: [senderUserId], references: [id], onDelete: Cascade)
@@ -1633,7 +1702,6 @@ model ModerationAction {
   @@map("moderation_actions")
 }
 
-
 model GiftCategory {
   id          String  @id @default(uuid()) @db.Uuid
   name        String  @db.VarChar(80)
@@ -1654,15 +1722,15 @@ model GiftCategory {
 }
 
 model Gift {
-  id           String        @id
-  name         String
-  diamondValue Int           @map("diamond_value")
-  coinCost     Int           @map("coin_cost")
-  mediaUrl     String        @map("media_url")
-  mediaType    GiftMediaType @map("media_type")
-  isBigGift    Boolean       @default(false) @map("is_big_gift")
-  isEnabled   Boolean       @default(true) @map("is_enabled")
-  effectSize  String        @default("MEDIUM") @map("effect_size")
+  id             String        @id
+  name           String
+  diamondValue   Int           @map("diamond_value")
+  coinCost       Int           @map("coin_cost")
+  mediaUrl       String        @map("media_url")
+  mediaType      GiftMediaType @map("media_type")
+  isBigGift      Boolean       @default(false) @map("is_big_gift")
+  isEnabled      Boolean       @default(true) @map("is_enabled")
+  effectSize     String        @default("MEDIUM") @map("effect_size")
   giftCategoryId String?       @map("gift_category_id") @db.Uuid
 
   createdAt DateTime @default(now()) @map("created_at")
@@ -1672,7 +1740,8 @@ model Gift {
 
   usersRequiringAsDmUnlock User[] @relation("UserDmUnlockGift")
 
-  giftCategory    GiftCategory?    @relation(fields: [giftCategoryId], references: [id], onDelete: SetNull)
+  giftCategory GiftCategory? @relation(fields: [giftCategoryId], references: [id], onDelete: SetNull)
+
   @@index([giftCategoryId])
   @@index([coinCost])
   @@index([diamondValue])
@@ -1880,7 +1949,6 @@ model GiftTransaction {
   battleContribution BattleContribution?
   directMessage      DirectMessage?
 
-
   battleSideContributionV2 BattleSideContribution? @relation("BattleSideContributionGiftTx")
 
   @@unique([senderUserId, idempotencyKey])
@@ -1957,16 +2025,16 @@ model BattleSession {
   durationSeconds Int @map("duration_seconds")
   cooldownSeconds Int @map("cooldown_seconds")
 
-  startedAt          DateTime? @map("started_at")
-  endsAt             DateTime? @map("ends_at")
-  cooldownStartedAt  DateTime? @map("cooldown_started_at")
-  cooldownEndsAt     DateTime? @map("cooldown_ends_at")
+  startedAt         DateTime? @map("started_at")
+  endsAt            DateTime? @map("ends_at")
+  cooldownStartedAt DateTime? @map("cooldown_started_at")
+  cooldownEndsAt    DateTime? @map("cooldown_ends_at")
 
   suddenDeathRound Int @default(0) @map("sudden_death_round")
 
-  winnerSideId  String?          @map("winner_side_id") @db.Uuid
-  endedReason   BattleEndReason? @map("ended_reason")
-  parentBattleId String?         @map("parent_battle_id") @db.Uuid
+  winnerSideId   String?          @map("winner_side_id") @db.Uuid
+  endedReason    BattleEndReason? @map("ended_reason")
+  parentBattleId String?          @map("parent_battle_id") @db.Uuid
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -2031,7 +2099,7 @@ model BattleParticipant {
   userId   String  @map("user_id") @db.Uuid
 
   role      BattleParticipantRole
-  status    BattleParticipantStatus  @default(INVITED)
+  status    BattleParticipantStatus    @default(INVITED)
   mediaMode BattleParticipantMediaMode @default(VIDEO) @map("media_mode")
 
   acceptedAt DateTime? @map("accepted_at")
@@ -2167,7 +2235,6 @@ model BattleSideContribution {
   @@index([createdAt])
   @@map("battle_side_contributions")
 }
-
 
 model Notification {
   id          String           @id @default(uuid())
@@ -2358,7 +2425,6 @@ model UserBadge {
   @@index([expiresAt])
   @@map("user_badges")
 }
-
 
 model UserBlock {
   blockerId String   @map("blocker_id") @db.Uuid
@@ -2844,12 +2910,12 @@ model InAppAlert {
   cronExpression     String?           @map("cron_expression") @db.VarChar(120)
   eventTriggerKey    String?           @map("event_trigger_key") @db.VarChar(120)
 
-  targetAllUsers Boolean  @default(true) @map("target_all_users")
-  targetRoles    String[] @default([]) @map("target_roles")
-  targetUserIds  String[] @default([]) @map("target_user_ids") @db.Uuid
+  targetAllUsers  Boolean  @default(true) @map("target_all_users")
+  targetRoles     String[] @default([]) @map("target_roles")
+  targetUserIds   String[] @default([]) @map("target_user_ids") @db.Uuid
   targetPlatforms String[] @default([]) @map("target_platforms")
-  minAppVersion  String?  @map("min_app_version") @db.VarChar(40)
-  maxAppVersion  String?  @map("max_app_version") @db.VarChar(40)
+  minAppVersion   String?  @map("min_app_version") @db.VarChar(40)
+  maxAppVersion   String?  @map("max_app_version") @db.VarChar(40)
 
   metadataJson Json? @map("metadata_json")
 

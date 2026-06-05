@@ -4,9 +4,13 @@ import type { Request } from "express";
 import { JwtAuthGuard } from "../auth/jwt/jwt-auth.guard";
 import {
     CreateHelpdeskTicketDto,
+    HelpdeskLiveChatQueryDto,
     HelpdeskTicketQueryDto,
+    ReplyHelpdeskLiveChatDto,
     ReplyHelpdeskTicketDto,
+    StartHelpdeskLiveChatDto,
 } from "./dto/helpdesk.dto";
+import { HelpdeskPhase2Service } from "./helpdesk-phase2.service";
 import { HelpdeskService } from "./helpdesk.service";
 
 type JwtReq = Request & { user?: { userId: string } };
@@ -14,11 +18,44 @@ type JwtReq = Request & { user?: { userId: string } };
 @Controller("helpdesk")
 @UseGuards(JwtAuthGuard)
 export class HelpdeskController {
-    constructor(private readonly helpdesk: HelpdeskService) { }
+    constructor(
+        private readonly helpdesk: HelpdeskService,
+        private readonly phase2: HelpdeskPhase2Service,
+    ) { }
 
     @Get("categories")
     async categories() {
         return this.helpdesk.listPublicCategories();
+    }
+
+    @Get("live-chat/threads")
+    async listLiveChatThreads(
+        @Req() req: JwtReq,
+        @Query() query: HelpdeskLiveChatQueryDto,
+    ) {
+        return this.phase2.listUserLiveChatThreads(req.user!.userId, query);
+    }
+
+    @Post("live-chat/threads")
+    async startLiveChatThread(
+        @Req() req: JwtReq,
+        @Body() body: StartHelpdeskLiveChatDto,
+    ) {
+        return this.phase2.startUserLiveChatThread(req.user!.userId, body);
+    }
+
+    @Get("live-chat/threads/:id")
+    async getLiveChatThread(@Req() req: JwtReq, @Param("id") id: string) {
+        return this.phase2.getUserLiveChatThread(req.user!.userId, id);
+    }
+
+    @Post("live-chat/threads/:id/messages")
+    async addLiveChatMessage(
+        @Req() req: JwtReq,
+        @Param("id") id: string,
+        @Body() body: ReplyHelpdeskLiveChatDto,
+    ) {
+        return this.phase2.addUserLiveChatMessage(req.user!.userId, id, body);
     }
 
     @Get("tickets")
