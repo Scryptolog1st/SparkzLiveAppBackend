@@ -1083,28 +1083,21 @@ export class HelpdeskPhase2Service {
     ) {
         await this.requireUser(userId);
 
-        const existing = await this.prisma.helpdeskLiveChatThread.findFirst({
-            where: { id, userId },
-            include: this.liveChatThreadInclude(true),
-        });
-
-        if (!existing) {
-            throw new NotFoundException("Helpdesk live chat thread not found.");
-        }
-
-        if (
-            existing.status === HelpdeskLiveChatThreadStatus.CLOSED ||
-            existing.status === HelpdeskLiveChatThreadStatus.CONVERTED_TO_TICKET
-        ) {
-            throw new BadRequestException("This live chat thread is already closed.");
-        }
-
         const closeReason = this.normalizeOptionalString(body.reason);
         const now = new Date();
 
         const updated = await this.prisma.$transaction(async (tx) => {
-            await tx.helpdeskLiveChatThread.update({
-                where: { id: existing.id },
+            const closeResult = await tx.helpdeskLiveChatThread.updateMany({
+                where: {
+                    id,
+                    userId,
+                    status: {
+                        notIn: [
+                            HelpdeskLiveChatThreadStatus.CLOSED,
+                            HelpdeskLiveChatThreadStatus.CONVERTED_TO_TICKET,
+                        ],
+                    },
+                },
                 data: {
                     status: HelpdeskLiveChatThreadStatus.CLOSED,
                     closedAt: now,
@@ -1117,9 +1110,22 @@ export class HelpdeskPhase2Service {
                 },
             });
 
+            if (closeResult.count !== 1) {
+                const current = await tx.helpdeskLiveChatThread.findFirst({
+                    where: { id, userId },
+                    select: { id: true, status: true },
+                });
+
+                if (!current) {
+                    throw new NotFoundException("Helpdesk live chat thread not found.");
+                }
+
+                throw new BadRequestException("This live chat thread is already closed.");
+            }
+
             await tx.helpdeskLiveChatMessage.create({
                 data: {
-                    threadId: existing.id,
+                    threadId: id,
                     senderType: HelpdeskLiveChatMessageSenderType.SYSTEM,
                     body: "Live chat ended by user.",
                     metadataJson: this.toJsonObject({
@@ -1130,7 +1136,7 @@ export class HelpdeskPhase2Service {
             });
 
             const updatedThread = await tx.helpdeskLiveChatThread.findUnique({
-                where: { id: existing.id },
+                where: { id },
                 include: this.liveChatThreadInclude(true),
             });
 
@@ -1169,17 +1175,67 @@ export class HelpdeskPhase2Service {
             throw new BadRequestException("This live chat thread is already closed.");
         }
 
-        const updated = await this.prisma.helpdeskLiveChatThread.update({
-            where: { id: existing.id },
-            data: {
-                status: HelpdeskLiveChatThreadStatus.CLOSED,
-                closedAt: new Date(),
-                closedByAdminUserId: adminUserId,
-                closeReason: this.normalizeOptionalString(body.reason),
-                claimedByAdminUserId: null,
-                claimExpiresAt: null,
-            },
-            include: this.liveChatThreadInclude(true),
+        const closeReason = this.normalizeOptionalString(body.reason);
+        const now = new Date();
+
+        const updated = await this.prisma.$transaction(async (tx) => {
+            const closeResult = await tx.helpdeskLiveChatThread.updateMany({
+                where: {
+                    id: existing.id,
+                    status: {
+                        notIn: [
+                            HelpdeskLiveChatThreadStatus.CLOSED,
+                            HelpdeskLiveChatThreadStatus.CONVERTED_TO_TICKET,
+                        ],
+                    },
+                },
+                data: {
+                    status: HelpdeskLiveChatThreadStatus.CLOSED,
+                    closedAt: now,
+                    closedByAdminUserId: adminUserId,
+                    closeReason,
+                    claimedByAdminUserId: null,
+                    claimedAt: null,
+                    claimExpiresAt: null,
+                    lastMessageAt: now,
+                },
+            });
+
+            if (closeResult.count !== 1) {
+                const current = await tx.helpdeskLiveChatThread.findUnique({
+                    where: { id: existing.id },
+                    select: { id: true, status: true },
+                });
+
+                if (!current) {
+                    throw new NotFoundException("Helpdesk live chat thread not found.");
+                }
+
+                throw new BadRequestException("This live chat thread is already closed.");
+            }
+
+            await tx.helpdeskLiveChatMessage.create({
+                data: {
+                    threadId: existing.id,
+                    senderType: HelpdeskLiveChatMessageSenderType.SYSTEM,
+                    body: "Live chat ended by support.",
+                    metadataJson: this.toJsonObject({
+                        action: "STAFF_CLOSED_LIVE_CHAT",
+                        reason: closeReason,
+                    }),
+                },
+            });
+
+            const updatedThread = await tx.helpdeskLiveChatThread.findUnique({
+                where: { id: existing.id },
+                include: this.liveChatThreadInclude(true),
+            });
+
+            if (!updatedThread) {
+                throw new NotFoundException("Helpdesk live chat thread not found.");
+            }
+
+            return updatedThread;
         });
 
         await this.writeAudit({
