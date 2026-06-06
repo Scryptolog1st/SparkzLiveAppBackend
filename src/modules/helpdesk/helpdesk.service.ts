@@ -996,8 +996,6 @@ export class HelpdeskService {
             throw new BadRequestException("Closed tickets cannot receive replies.");
         }
 
-        const shouldAutoClaim = !existing.assignedAdminUserId;
-
         const updated = await this.prisma.$transaction(async (tx) => {
             await tx.helpdeskTicketMessage.create({
                 data: {
@@ -1008,12 +1006,22 @@ export class HelpdeskService {
                 },
             });
 
+            const autoClaimResult = await tx.helpdeskTicket.updateMany({
+                where: {
+                    id: existing.id,
+                    assignedAdminUserId: null,
+                },
+                data: {
+                    assignedAdminUserId: adminUserId,
+                },
+            });
+            const autoClaimed = autoClaimResult.count > 0;
+
             const updatedTicket = await tx.helpdeskTicket.update({
                 where: { id: existing.id },
                 data: {
                     status: HelpdeskTicketStatus.PENDING_USER,
                     lastMessageAt: new Date(),
-                    ...(shouldAutoClaim ? { assignedAdminUserId: adminUserId } : {}),
                 },
                 include: this.ticketInclude(true),
             });
@@ -1025,12 +1033,12 @@ export class HelpdeskService {
                     eventType: HelpdeskTicketEventType.MESSAGE_ADDED,
                     metadataJson: {
                         senderType: HelpdeskTicketMessageSenderType.STAFF,
-                        autoClaimed: shouldAutoClaim,
+                        autoClaimed,
                     },
                 },
             });
 
-            if (shouldAutoClaim) {
+            if (autoClaimed) {
                 await tx.helpdeskTicketEvent.create({
                     data: {
                         ticketId: existing.id,
