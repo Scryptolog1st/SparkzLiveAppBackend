@@ -996,35 +996,61 @@ export class HelpdeskService {
             throw new BadRequestException("Closed tickets cannot receive replies.");
         }
 
-        await this.prisma.$transaction([
-            this.prisma.helpdeskTicketMessage.create({
+        const shouldAutoClaim = !existing.assignedAdminUserId;
+
+        const updated = await this.prisma.$transaction(async (tx) => {
+            await tx.helpdeskTicketMessage.create({
                 data: {
                     ticketId: existing.id,
                     senderType: HelpdeskTicketMessageSenderType.STAFF,
                     senderAdminUserId: adminUserId,
                     body: messageBody,
                 },
-            }),
-            this.prisma.helpdeskTicket.update({
+            });
+
+            const updatedTicket = await tx.helpdeskTicket.update({
                 where: { id: existing.id },
                 data: {
                     status: HelpdeskTicketStatus.PENDING_USER,
                     lastMessageAt: new Date(),
+                    ...(shouldAutoClaim ? { assignedAdminUserId: adminUserId } : {}),
                 },
-            }),
-            this.prisma.helpdeskTicketEvent.create({
+                include: this.ticketInclude(true),
+            });
+
+            await tx.helpdeskTicketEvent.create({
                 data: {
                     ticketId: existing.id,
                     actorAdminUserId: adminUserId,
                     eventType: HelpdeskTicketEventType.MESSAGE_ADDED,
                     metadataJson: {
                         senderType: HelpdeskTicketMessageSenderType.STAFF,
+                        autoClaimed: shouldAutoClaim,
                     },
                 },
-            }),
-        ]);
+            });
 
-        const updated = await this.findTicketByIdOrNumber(existing.id);
+            if (shouldAutoClaim) {
+                await tx.helpdeskTicketEvent.create({
+                    data: {
+                        ticketId: existing.id,
+                        actorAdminUserId: adminUserId,
+                        eventType: HelpdeskTicketEventType.ASSIGNED,
+                        beforeJson: this.toJsonObject({
+                            assignedAdminUserId: null,
+                        }),
+                        afterJson: this.toJsonObject({
+                            assignedAdminUserId: adminUserId,
+                        }),
+                        metadataJson: this.toJsonObject({
+                            reason: "FIRST_STAFF_REPLY_AUTO_CLAIM",
+                        }),
+                    },
+                });
+            }
+
+            return updatedTicket;
+        });
 
         await this.addAdminAuditLog({
             actorAdminUserId: adminUserId,
@@ -1089,6 +1115,32 @@ export class HelpdeskService {
         });
 
         return this.mapTicketDetail(updated, canViewRealStaffIdentity, includeInternalNotes);
+    }
+
+    async claimTicket(
+        adminUserId: string,
+        id: string,
+        requestContext?: AdminAuditRequestContext | null,
+    ) {
+        return this.assignTicket(
+            adminUserId,
+            id,
+            { assignedAdminUserId: adminUserId },
+            requestContext,
+        );
+    }
+
+    async releaseTicket(
+        adminUserId: string,
+        id: string,
+        requestContext?: AdminAuditRequestContext | null,
+    ) {
+        return this.assignTicket(
+            adminUserId,
+            id,
+            { assignedAdminUserId: undefined },
+            requestContext,
+        );
     }
 
     async assignTicket(
