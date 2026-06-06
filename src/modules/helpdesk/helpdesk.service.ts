@@ -31,6 +31,8 @@ import {
     UpdateHelpdeskTicketPriorityDto,
     UpdateHelpdeskTicketStatusDto,
     UpsertHelpdeskCategoryDto,
+    UpdateHelpdeskCategoryDto,
+    DeactivateHelpdeskCategoryDto,
 } from "./dto/helpdesk.dto";
 
 type AdminAuditRequestContext = {
@@ -1321,6 +1323,184 @@ export class HelpdeskService {
         });
 
         return this.mapTicketDetail(updated, canViewRealStaffIdentity, includeInternalNotes);
+    }
+
+    async updateHelpdeskCategoryRecord(
+        adminUserId: string,
+        id: string,
+        body: UpdateHelpdeskCategoryDto,
+        requestContext?: AdminAuditRequestContext | null,
+    ) {
+        await this.requireAdmin(adminUserId);
+
+        const existing = await this.prisma.helpdeskCategory.findUnique({
+            where: { id },
+        });
+
+        if (!existing) {
+            throw new NotFoundException("Helpdesk category not found.");
+        }
+
+        if (body.isActive !== undefined) {
+            throw new BadRequestException(
+                "Use the deactivate or restore category endpoints to change category availability.",
+            );
+        }
+
+        const nextName = body.name === undefined ? undefined : body.name.trim();
+        if (body.name !== undefined && !nextName) {
+            throw new BadRequestException("Category name is required.");
+        }
+
+        const category = await this.prisma.helpdeskCategory.update({
+            where: { id },
+            data: {
+                ...(nextName !== undefined ? { name: nextName } : {}),
+                ...(body.description !== undefined
+                    ? { description: this.normalizeOptionalString(body.description) }
+                    : {}),
+                ...(body.sortOrder !== undefined ? { sortOrder: body.sortOrder } : {}),
+            },
+        });
+
+        const auditContext = this.normalizeAuditContext(requestContext);
+
+        await this.adminAudit.logEvent({
+            actorAdminUserId: adminUserId,
+            actionType: "UPDATE",
+            actionCode: "helpdesk.category.update",
+            actionLabel: "Updated helpdesk category",
+            resourceType: "HELPDESK_CATEGORY",
+            resourceId: category.id,
+            target: {
+                id: category.id,
+                name: category.name,
+                type: "HELPDESK_CATEGORY",
+            },
+            requestPath: auditContext.requestPath,
+            ipAddress: auditContext.ipAddress,
+            userAgent: auditContext.userAgent,
+            deviceLabel: auditContext.deviceLabel,
+            metadata: {
+                key: category.key,
+                before: {
+                    name: existing.name,
+                    description: existing.description,
+                    isActive: existing.isActive,
+                    sortOrder: existing.sortOrder,
+                },
+                after: {
+                    name: category.name,
+                    description: category.description,
+                    isActive: category.isActive,
+                    sortOrder: category.sortOrder,
+                },
+            },
+        });
+
+        return { success: true, item: this.mapCategory(category) };
+    }
+
+    async deactivateHelpdeskCategoryRecord(
+        adminUserId: string,
+        id: string,
+        body: DeactivateHelpdeskCategoryDto,
+        requestContext?: AdminAuditRequestContext | null,
+    ) {
+        await this.requireAdmin(adminUserId);
+
+        const existing = await this.prisma.helpdeskCategory.findUnique({
+            where: { id },
+        });
+
+        if (!existing) {
+            throw new NotFoundException("Helpdesk category not found.");
+        }
+
+        if (!existing.isActive) {
+            return { success: true, item: this.mapCategory(existing) };
+        }
+
+        const category = await this.prisma.helpdeskCategory.update({
+            where: { id },
+            data: { isActive: false },
+        });
+
+        const auditContext = this.normalizeAuditContext(requestContext);
+
+        await this.adminAudit.logEvent({
+            actorAdminUserId: adminUserId,
+            actionType: "UPDATE",
+            actionCode: "helpdesk.category.deactivate",
+            actionLabel: "Deactivated helpdesk category",
+            resourceType: "HELPDESK_CATEGORY",
+            resourceId: category.id,
+            target: {
+                id: category.id,
+                name: category.name,
+                type: "HELPDESK_CATEGORY",
+            },
+            requestPath: auditContext.requestPath,
+            ipAddress: auditContext.ipAddress,
+            userAgent: auditContext.userAgent,
+            deviceLabel: auditContext.deviceLabel,
+            metadata: {
+                key: category.key,
+                reason: this.normalizeOptionalString(body.reason),
+            },
+        });
+
+        return { success: true, item: this.mapCategory(category) };
+    }
+
+    async restoreHelpdeskCategoryRecord(
+        adminUserId: string,
+        id: string,
+        requestContext?: AdminAuditRequestContext | null,
+    ) {
+        await this.requireAdmin(adminUserId);
+
+        const existing = await this.prisma.helpdeskCategory.findUnique({
+            where: { id },
+        });
+
+        if (!existing) {
+            throw new NotFoundException("Helpdesk category not found.");
+        }
+
+        if (existing.isActive) {
+            return { success: true, item: this.mapCategory(existing) };
+        }
+
+        const category = await this.prisma.helpdeskCategory.update({
+            where: { id },
+            data: { isActive: true },
+        });
+
+        const auditContext = this.normalizeAuditContext(requestContext);
+
+        await this.adminAudit.logEvent({
+            actorAdminUserId: adminUserId,
+            actionType: "UPDATE",
+            actionCode: "helpdesk.category.restore",
+            actionLabel: "Restored helpdesk category",
+            resourceType: "HELPDESK_CATEGORY",
+            resourceId: category.id,
+            target: {
+                id: category.id,
+                name: category.name,
+                type: "HELPDESK_CATEGORY",
+            },
+            requestPath: auditContext.requestPath,
+            ipAddress: auditContext.ipAddress,
+            userAgent: auditContext.userAgent,
+            deviceLabel: auditContext.deviceLabel,
+            metadata: {
+                key: category.key,
+            },
+        });
+
+        return { success: true, item: this.mapCategory(category) };
     }
 
     async updateCategory(

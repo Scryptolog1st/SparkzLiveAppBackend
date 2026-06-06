@@ -144,6 +144,35 @@ export class UpsertHelpdeskCategoryDto {
 }
 
 
+
+export class UpdateHelpdeskCategoryDto {
+    @IsOptional()
+    @IsString()
+    @MaxLength(120)
+    name?: string;
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(500)
+    description?: string;
+
+    @IsOptional()
+    @IsBoolean()
+    isActive?: boolean;
+
+    @IsOptional()
+    @IsInt()
+    @Min(0)
+    sortOrder?: number;
+}
+
+export class DeactivateHelpdeskCategoryDto {
+    @IsOptional()
+    @IsString()
+    @MaxLength(500)
+    reason?: string;
+}
+
 export class HelpdeskLiveChatQueryDto {
     @IsOptional()
     @IsIn(["WAITING", "ACTIVE", "CLOSED", "CONVERTED_TO_TICKET"])
