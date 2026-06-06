@@ -1393,7 +1393,7 @@ export class HelpdeskService {
             },
         });
 
-        return this.mapCategory(category);
+        return { success: true, item: this.mapCategory(category) };
     }
 
     async deactivateHelpdeskCategoryRecord(

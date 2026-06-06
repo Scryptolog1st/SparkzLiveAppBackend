@@ -125,6 +125,7 @@ export class AdminHelpdeskController {
     }
 
     @Patch("categories/:id")
+    @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_MANAGE_CATEGORIES)
     async updateCategoryRecord(
         @Param("id") id: string,
         @Body() body: UpdateHelpdeskCategoryDto,
@@ -139,6 +140,7 @@ export class AdminHelpdeskController {
     }
 
     @Delete("categories/:id")
+    @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_MANAGE_CATEGORIES)
     async deactivateCategoryRecord(
         @Param("id") id: string,
         @Body() body: DeactivateHelpdeskCategoryDto,
@@ -153,6 +155,7 @@ export class AdminHelpdeskController {
     }
 
     @Post("categories/:id/restore")
+    @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_MANAGE_CATEGORIES)
     async restoreCategoryRecord(@Param("id") id: string, @Req() req: AdminRequestWithUser) {
         return this.helpdesk.restoreHelpdeskCategoryRecord(
             this.requireAdminUserId(req),
