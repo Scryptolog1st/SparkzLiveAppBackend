@@ -1341,6 +1341,12 @@ export class HelpdeskService {
             throw new NotFoundException("Helpdesk category not found.");
         }
 
+        if (body.isActive !== undefined) {
+            throw new BadRequestException(
+                "Use the deactivate or restore category endpoints to change category availability.",
+            );
+        }
+
         const nextName = body.name === undefined ? undefined : body.name.trim();
         if (body.name !== undefined && !nextName) {
             throw new BadRequestException("Category name is required.");
@@ -1353,7 +1359,6 @@ export class HelpdeskService {
                 ...(body.description !== undefined
                     ? { description: this.normalizeOptionalString(body.description) }
                     : {}),
-                ...(body.isActive !== undefined ? { isActive: body.isActive } : {}),
                 ...(body.sortOrder !== undefined ? { sortOrder: body.sortOrder } : {}),
             },
         });
@@ -1413,7 +1418,7 @@ export class HelpdeskService {
         }
 
         if (!existing.isActive) {
-            return this.mapCategory(existing);
+            return { success: true, item: this.mapCategory(existing) };
         }
 
         const category = await this.prisma.helpdeskCategory.update({
@@ -1445,7 +1450,7 @@ export class HelpdeskService {
             },
         });
 
-        return this.mapCategory(category);
+        return { success: true, item: this.mapCategory(category) };
     }
 
     async restoreHelpdeskCategoryRecord(
@@ -1464,7 +1469,7 @@ export class HelpdeskService {
         }
 
         if (existing.isActive) {
-            return this.mapCategory(existing);
+            return { success: true, item: this.mapCategory(existing) };
         }
 
         const category = await this.prisma.helpdeskCategory.update({
@@ -1495,7 +1500,7 @@ export class HelpdeskService {
             },
         });
 
-        return this.mapCategory(category);
+        return { success: true, item: this.mapCategory(category) };
     }
 
     async updateCategory(
