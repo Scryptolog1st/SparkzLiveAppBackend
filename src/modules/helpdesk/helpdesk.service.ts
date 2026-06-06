@@ -564,30 +564,36 @@ export class HelpdeskService {
             throw new BadRequestException("Category key is required.");
         }
 
-        const category = await this.prisma.helpdeskCategory.upsert({
-            where: { key },
-            update: {
-                name: body.name.trim(),
-                description: this.normalizeOptionalString(body.description),
-                isActive: body.isActive ?? true,
-                sortOrder: body.sortOrder ?? 0,
-            },
-            create: {
-                key,
-                name: body.name.trim(),
-                description: this.normalizeOptionalString(body.description),
-                isActive: body.isActive ?? true,
-                sortOrder: body.sortOrder ?? 0,
-            },
-        });
+        let category;
+
+        try {
+            category = await this.prisma.helpdeskCategory.create({
+                data: {
+                    key,
+                    name: body.name.trim(),
+                    description: this.normalizeOptionalString(body.description),
+                    isActive: body.isActive ?? true,
+                    sortOrder: body.sortOrder ?? 0,
+                },
+            });
+        } catch (error) {
+            if (
+                error instanceof Prisma.PrismaClientKnownRequestError &&
+                error.code === "P2002"
+            ) {
+                throw new BadRequestException("A helpdesk category with this key already exists.");
+            }
+
+            throw error;
+        }
 
         const auditContext = this.normalizeAuditContext(requestContext);
 
         await this.adminAudit.logEvent({
             actorAdminUserId: adminUserId,
-            actionType: "UPDATE",
-            actionCode: "helpdesk.category.upsert",
-            actionLabel: "Created or updated helpdesk category",
+            actionType: "CREATE",
+            actionCode: "helpdesk.category.create",
+            actionLabel: "Created helpdesk category",
             resourceType: "HELPDESK_CATEGORY",
             resourceId: category.id,
             target: {
