@@ -1,14 +1,24 @@
 import {
+    UnauthorizedException,
     Body,
     Controller,
+    Delete,
     Get,
     Param,
+    Patch,
     Post,
     Query,
     Req,
     UseGuards,
 } from "@nestjs/common";
 import type { Request } from "express";
+
+type AdminRequestWithUser = Request & {
+    adminUser?: {
+        id: string;
+    };
+};
+
 
 import { AdminPermissionGuard } from "../admin-users/admin-permission.guard";
 import { ADMIN_PERMISSIONS } from "../admin-users/admin-permissions";
@@ -44,6 +54,15 @@ type AdminRequestContext = {
 @Controller("admin/helpdesk")
 @UseGuards(AdminProxyGuard, AdminPermissionGuard)
 export class AdminHelpdeskController {
+
+    private requireAdminUserId(req: AdminRequestWithUser) {
+        if (!req.adminUser?.id) {
+            throw new UnauthorizedException("Admin authentication required.");
+        }
+
+        return req.adminUser.id;
+    }
+
     constructor(
         private readonly helpdesk: HelpdeskService,
         private readonly phase2: HelpdeskPhase2Service,
@@ -101,6 +120,43 @@ export class AdminHelpdeskController {
         return this.helpdesk.upsertCategory(
             req.adminUser.id,
             body,
+            this.buildAuditContext(req),
+        );
+    }
+
+    @Patch("categories/:id")
+    async updateCategoryRecord(
+        @Param("id") id: string,
+        @Body() body: UpdateHelpdeskCategoryDto,
+        @Req() req: AdminRequestWithUser,
+    ) {
+        return this.helpdesk.updateHelpdeskCategoryRecord(
+            this.requireAdminUserId(req),
+            id,
+            body,
+            this.buildAuditContext(req),
+        );
+    }
+
+    @Delete("categories/:id")
+    async deactivateCategoryRecord(
+        @Param("id") id: string,
+        @Body() body: DeactivateHelpdeskCategoryDto,
+        @Req() req: AdminRequestWithUser,
+    ) {
+        return this.helpdesk.deactivateHelpdeskCategoryRecord(
+            this.requireAdminUserId(req),
+            id,
+            body,
+            this.buildAuditContext(req),
+        );
+    }
+
+    @Post("categories/:id/restore")
+    async restoreCategoryRecord(@Param("id") id: string, @Req() req: AdminRequestWithUser) {
+        return this.helpdesk.restoreHelpdeskCategoryRecord(
+            this.requireAdminUserId(req),
+            id,
             this.buildAuditContext(req),
         );
     }

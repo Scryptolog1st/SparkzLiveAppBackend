@@ -162,6 +162,7 @@ export class UpdateHelpdeskCategoryDto {
 
     @IsOptional()
     @IsInt()
+    @Min(0)
     sortOrder?: number;
 }
 
