@@ -28,6 +28,8 @@ import {
     UpdateHelpdeskTicketPriorityDto,
     UpdateHelpdeskTicketStatusDto,
     UpsertHelpdeskCategoryDto,
+    UpdateHelpdeskCategoryDto,
+    DeactivateHelpdeskCategoryDto,
 } from "./dto/helpdesk.dto";
 import { HelpdeskPhase2Service } from "./helpdesk-phase2.service";
 import { HelpdeskService } from "./helpdesk.service";

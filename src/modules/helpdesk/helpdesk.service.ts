@@ -31,6 +31,8 @@ import {
     UpdateHelpdeskTicketPriorityDto,
     UpdateHelpdeskTicketStatusDto,
     UpsertHelpdeskCategoryDto,
+    UpdateHelpdeskCategoryDto,
+    DeactivateHelpdeskCategoryDto,
 } from "./dto/helpdesk.dto";
 
 type AdminAuditRequestContext = {
