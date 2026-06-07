@@ -1169,6 +1169,8 @@ export class HelpdeskService {
         id: string,
         requestContext?: AdminAuditRequestContext | null,
     ) {
+        await this.requireAdmin(adminUserId);
+
         const existing = await this.findTicketByIdOrNumber(id);
 
         if (!existing) {
@@ -1202,6 +1204,8 @@ export class HelpdeskService {
         id: string,
         requestContext?: AdminAuditRequestContext | null,
     ) {
+        await this.requireAdmin(adminUserId);
+
         const existing = await this.findTicketByIdOrNumber(id);
 
         if (!existing) {
@@ -1263,13 +1267,14 @@ export class HelpdeskService {
 
         const auditActionCode = auditAction?.actionCode ?? "helpdesk.ticket.assign";
         const auditActionLabel = auditAction?.actionLabel ?? "Assigned helpdesk ticket";
-        const expectedAssignedAdminUserId = auditAction?.expectedAssignedAdminUserId;
+        const expectedAssignedAdminUserId =
+            auditAction?.expectedAssignedAdminUserId ?? currentAssignedAdminUserId;
 
         const updated = await this.prisma.$transaction(async (tx) => {
-            const assignmentWhere =
-                expectedAssignedAdminUserId === undefined
-                    ? { id: existing.id }
-                    : { id: existing.id, assignedAdminUserId: expectedAssignedAdminUserId };
+            const assignmentWhere = {
+                id: existing.id,
+                assignedAdminUserId: expectedAssignedAdminUserId,
+            };
 
             const assignmentUpdate = await tx.helpdeskTicket.updateMany({
                 where: assignmentWhere,
