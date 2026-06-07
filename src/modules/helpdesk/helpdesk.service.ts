@@ -7,12 +7,15 @@ import {
 } from "@nestjs/common";
 import {
     AdminRole,
+    CoinLotStatus,
     HelpdeskTicketEventType,
     HelpdeskTicketMessageSenderType,
     HelpdeskTicketPriority,
     HelpdeskTicketSource,
     HelpdeskTicketStatus,
+    LedgerEntryType,
     Prisma,
+    PurchaseProvider,
 } from "@prisma/client";
 import { randomBytes } from "crypto";
 
@@ -23,6 +26,7 @@ import { AdminRolePermissionsService } from "../admin-users/admin-role-permissio
 import { PrismaService } from "../prisma/prisma.service";
 import {
     AddHelpdeskInternalNoteDto,
+    AdjustHelpdeskWalletDto,
     AssignHelpdeskTicketDto,
     CreateHelpdeskTicketDto,
     HelpdeskTicketQueryDto,
@@ -43,6 +47,13 @@ type AdminAuditRequestContext = {
 };
 
 type JsonRecord = Record<string, unknown>;
+
+type WalletCoinLotLockRow = {
+    id: string;
+    coins_remaining: number;
+};
+
+type HelpdeskWalletCurrency = "COINS" | "SPARKZ";
 
 @Injectable()
 export class HelpdeskService {
@@ -1737,4 +1748,468 @@ export class HelpdeskService {
 
         return this.mapTicketDetail(updated, canViewRealStaffIdentity, includeInternalNotes);
     }
+    private normalizeWalletAdjustmentAmount(value: unknown) {
+        const amount = Number(value);
+
+        if (!Number.isInteger(amount) || amount === 0) {
+            throw new BadRequestException("Adjustment amount must be a non-zero whole number.");
+        }
+
+        if (Math.abs(amount) > 1_000_000_000) {
+            throw new BadRequestException("Adjustment amount is too large.");
+        }
+
+        return amount;
+    }
+
+    private mapWallet(wallet: any) {
+        return {
+            coins: wallet?.coins ?? 0,
+            sparkz: wallet?.diamondsEarned ?? 0,
+            diamondsEarned: wallet?.diamondsEarned ?? 0,
+            createdAt: wallet?.createdAt ? wallet.createdAt.toISOString() : null,
+            updatedAt: wallet?.updatedAt ? wallet.updatedAt.toISOString() : null,
+        };
+    }
+
+    private mapWalletLedgerEntry(entry: any) {
+        return {
+            id: entry.id,
+            type: entry.type,
+            deltaCoins: entry.deltaCoins,
+            deltaSparkz: entry.deltaDiamonds,
+            deltaDiamonds: entry.deltaDiamonds,
+            streamId: entry.streamId ?? null,
+            giftTxId: entry.giftTxId ?? null,
+            createdAt: entry.createdAt.toISOString(),
+        };
+    }
+
+    private async requireHelpdeskTargetUser(userId: string) {
+        if (!this.isUuid(userId)) {
+            throw new BadRequestException("Invalid user id.");
+        }
+
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            include: {
+                profile: true,
+                wallet: true,
+            },
+        });
+
+        if (!user) {
+            throw new NotFoundException("User account not found.");
+        }
+
+        return user;
+    }
+
+    private async addWalletAuditLog(args: {
+        actorAdminUserId: string;
+        targetUser: any;
+        actionCode: string;
+        actionLabel: string;
+        beforeState?: JsonRecord | null;
+        afterState?: JsonRecord | null;
+        diff?: JsonRecord | null;
+        metadata?: JsonRecord | null;
+        ticketId?: string | null;
+        requestContext?: AdminAuditRequestContext | null;
+    }) {
+        const requestContext = this.normalizeAuditContext(args.requestContext);
+        const userLabel =
+            args.targetUser?.profile?.displayName?.trim() ||
+            args.targetUser?.username ||
+            args.targetUser?.publicId ||
+            args.targetUser?.id;
+
+        await this.adminAudit.logEvent({
+            actorAdminUserId: args.actorAdminUserId,
+            actionType: "UPDATE",
+            actionCode: args.actionCode,
+            actionLabel: args.actionLabel,
+            resourceType: "HELPDESK_WALLET",
+            resourceId: args.targetUser.id,
+            target: {
+                id: args.targetUser.id,
+                name: userLabel,
+                type: "USER",
+            },
+            references: {
+                targetUserId: args.targetUser.id,
+                targetSupportTicketId: args.ticketId ?? null,
+            },
+            requestPath: requestContext.requestPath,
+            ipAddress: requestContext.ipAddress,
+            userAgent: requestContext.userAgent,
+            deviceLabel: requestContext.deviceLabel,
+            beforeState: args.beforeState,
+            afterState: args.afterState,
+            diff: args.diff,
+            metadata: args.metadata,
+        });
+    }
+
+    private async deductAvailableCoinLots(
+        tx: Prisma.TransactionClient,
+        userId: string,
+        amount: number,
+    ) {
+        let remaining = amount;
+
+        while (remaining > 0) {
+            const rows = await tx.$queryRaw<WalletCoinLotLockRow[]>`
+                SELECT id, coins_remaining
+                FROM coin_lots
+                WHERE user_id = ${userId}::uuid
+                  AND status = 'AVAILABLE'
+                  AND coins_remaining > 0
+                ORDER BY created_at ASC, id ASC
+                LIMIT 32
+                FOR UPDATE
+            `;
+
+            if (!rows.length) {
+                throw new BadRequestException("Insufficient available coin lots for this negative adjustment.");
+            }
+
+            for (const row of rows) {
+                if (remaining <= 0) break;
+
+                const useCoins = Math.min(Number(row.coins_remaining), remaining);
+
+                if (!Number.isFinite(useCoins) || useCoins <= 0) {
+                    continue;
+                }
+
+                const updated = await tx.coinLot.updateMany({
+                    where: {
+                        id: row.id,
+                        status: CoinLotStatus.AVAILABLE,
+                        coinsRemaining: { gte: useCoins },
+                    },
+                    data: {
+                        coinsRemaining: {
+                            decrement: useCoins,
+                        },
+                    },
+                });
+
+                if (updated.count !== 1) {
+                    throw new BadRequestException("Coin lot changed during wallet adjustment.");
+                }
+
+                remaining -= useCoins;
+            }
+        }
+    }
+
+    async getHelpdeskUserWallet(
+        adminUserId: string,
+        userId: string,
+        requestContext?: AdminAuditRequestContext | null,
+    ) {
+        const actor = await this.requireAdmin(adminUserId);
+        const targetUser = await this.requireHelpdeskTargetUser(userId);
+
+        const wallet = await this.prisma.wallet.upsert({
+            where: { userId: targetUser.id },
+            create: {
+                userId: targetUser.id,
+                coins: 0,
+                diamondsEarned: 0,
+            },
+            update: {},
+        });
+
+        await this.addWalletAuditLog({
+            actorAdminUserId: actor.id,
+            targetUser,
+            actionCode: "helpdesk.wallet.view",
+            actionLabel: "Viewed helpdesk wallet balances",
+            beforeState: null,
+            afterState: this.mapWallet(wallet),
+            metadata: {
+                source: "HELPDESK",
+            },
+            requestContext,
+        });
+
+        return {
+            user: this.mapUser(targetUser),
+            wallet: this.mapWallet(wallet),
+        };
+    }
+
+    async getHelpdeskUserWalletLedger(
+        adminUserId: string,
+        userId: string,
+        requestContext?: AdminAuditRequestContext | null,
+    ) {
+        const actor = await this.requireAdmin(adminUserId);
+        const targetUser = await this.requireHelpdeskTargetUser(userId);
+
+        const [wallet, ledgerEntries] = await Promise.all([
+            this.prisma.wallet.upsert({
+                where: { userId: targetUser.id },
+                create: {
+                    userId: targetUser.id,
+                    coins: 0,
+                    diamondsEarned: 0,
+                },
+                update: {},
+            }),
+            this.prisma.walletLedger.findMany({
+                where: { userId: targetUser.id },
+                orderBy: { createdAt: "desc" },
+                take: 50,
+            }),
+        ]);
+
+        await this.addWalletAuditLog({
+            actorAdminUserId: actor.id,
+            targetUser,
+            actionCode: "helpdesk.wallet.ledger.view",
+            actionLabel: "Viewed helpdesk wallet ledger",
+            beforeState: null,
+            afterState: {
+                ledgerEntryCount: ledgerEntries.length,
+            },
+            metadata: {
+                source: "HELPDESK",
+            },
+            requestContext,
+        });
+
+        return {
+            user: this.mapUser(targetUser),
+            wallet: this.mapWallet(wallet),
+            items: ledgerEntries.map((entry) => this.mapWalletLedgerEntry(entry)),
+        };
+    }
+
+    async adjustHelpdeskUserWallet(
+        adminUserId: string,
+        userId: string,
+        currency: HelpdeskWalletCurrency,
+        body: AdjustHelpdeskWalletDto,
+        requestContext?: AdminAuditRequestContext | null,
+    ) {
+        const actor = await this.requireAdmin(adminUserId);
+        const targetUser = await this.requireHelpdeskTargetUser(userId);
+        const amount = this.normalizeWalletAdjustmentAmount(body.amount);
+        const reason = this.normalizeOptionalString(body.reason);
+        const reference = this.normalizeOptionalString(body.reference);
+        const ticketId = this.normalizeOptionalString(body.ticketId);
+
+        if (!reason) {
+            throw new BadRequestException("Adjustment reason is required.");
+        }
+
+        if (!reference) {
+            throw new BadRequestException("Adjustment reference is required.");
+        }
+
+        if (ticketId) {
+            const ticket = await this.prisma.helpdeskTicket.findFirst({
+                where: {
+                    id: ticketId,
+                    userId: targetUser.id,
+                },
+                select: { id: true },
+            });
+
+            if (!ticket) {
+                throw new BadRequestException("Ticket reference must belong to the selected user.");
+            }
+        }
+
+        if (amount < 0) {
+            const permissions = await this.adminRolePermissions.getEffectivePermissions(actor.role);
+
+            if (
+                !hasAdminPermission(
+                    permissions,
+                    ADMIN_PERMISSIONS.HELPDESK_TOOLS_NEGATIVE_WALLET_ADJUSTMENT,
+                )
+            ) {
+                throw new ForbiddenException("Negative wallet adjustments require separate permission.");
+            }
+        }
+
+        const result = await this.prisma.$transaction(async (tx) => {
+            await tx.wallet.upsert({
+                where: { userId: targetUser.id },
+                create: {
+                    userId: targetUser.id,
+                    coins: 0,
+                    diamondsEarned: 0,
+                },
+                update: {},
+            });
+
+            const beforeWallet = await tx.wallet.findUniqueOrThrow({
+                where: { userId: targetUser.id },
+            });
+
+            if (currency === "COINS") {
+                if (amount < 0) {
+                    const decrement = Math.abs(amount);
+
+                    if (beforeWallet.coins < decrement) {
+                        throw new BadRequestException("Coin adjustment cannot make the wallet negative.");
+                    }
+
+                    await this.deductAvailableCoinLots(tx, targetUser.id, decrement);
+
+                    const updated = await tx.wallet.updateMany({
+                        where: {
+                            userId: targetUser.id,
+                            coins: { gte: decrement },
+                        },
+                        data: {
+                            coins: {
+                                decrement,
+                            },
+                        },
+                    });
+
+                    if (updated.count !== 1) {
+                        throw new BadRequestException("Wallet changed during adjustment.");
+                    }
+                } else {
+                    await tx.wallet.update({
+                        where: { userId: targetUser.id },
+                        data: {
+                            coins: {
+                                increment: amount,
+                            },
+                        },
+                    });
+
+                    await tx.coinLot.create({
+                        data: {
+                            userId: targetUser.id,
+                            sourceType: "ADMIN_ADJUST",
+                            provider: PurchaseProvider.DEV,
+                            coinsPurchased: amount,
+                            coinsRemaining: amount,
+                            priceCents: null,
+                            currency: "USD",
+                            status: CoinLotStatus.AVAILABLE,
+                            metadataJson: {
+                                reason,
+                                reference,
+                                ticketId,
+                                adjustedByAdminUserId: actor.id,
+                                source: "HELPDESK",
+                            },
+                        },
+                    });
+                }
+            } else {
+                if (amount < 0 && beforeWallet.diamondsEarned < Math.abs(amount)) {
+                    throw new BadRequestException("Sparkz adjustment cannot make the wallet negative.");
+                }
+
+                const sparkzUpdate =
+                    amount > 0
+                        ? { increment: amount }
+                        : { decrement: Math.abs(amount) };
+
+                const updated = await tx.wallet.updateMany({
+                    where:
+                        amount < 0
+                            ? {
+                                userId: targetUser.id,
+                                diamondsEarned: { gte: Math.abs(amount) },
+                            }
+                            : {
+                                userId: targetUser.id,
+                            },
+                    data: {
+                        diamondsEarned: sparkzUpdate,
+                    },
+                });
+
+                if (updated.count !== 1) {
+                    throw new BadRequestException("Wallet changed during adjustment.");
+                }
+            }
+
+            const afterWallet = await tx.wallet.findUniqueOrThrow({
+                where: { userId: targetUser.id },
+            });
+
+            const ledgerEntry = await tx.walletLedger.create({
+                data: {
+                    userId: targetUser.id,
+                    type: LedgerEntryType.ADMIN_ADJUST,
+                    deltaCoins: currency === "COINS" ? amount : 0,
+                    deltaDiamonds: currency === "SPARKZ" ? amount : 0,
+                },
+            });
+
+            return {
+                beforeWallet,
+                afterWallet,
+                ledgerEntry,
+            };
+        });
+
+        const actionCode =
+            currency === "COINS"
+                ? "helpdesk.wallet.adjust_coins"
+                : "helpdesk.wallet.adjust_sparkz";
+        const actionLabel =
+            currency === "COINS"
+                ? "Adjusted user coin balance from helpdesk"
+                : "Adjusted user Sparkz balance from helpdesk";
+
+        await this.addWalletAuditLog({
+            actorAdminUserId: actor.id,
+            targetUser,
+            actionCode,
+            actionLabel,
+            beforeState: this.mapWallet(result.beforeWallet),
+            afterState: this.mapWallet(result.afterWallet),
+            diff: {
+                currency,
+                amount,
+                coins: {
+                    before: result.beforeWallet.coins,
+                    after: result.afterWallet.coins,
+                },
+                sparkz: {
+                    before: result.beforeWallet.diamondsEarned,
+                    after: result.afterWallet.diamondsEarned,
+                },
+            },
+            metadata: {
+                reason,
+                reference,
+                ticketId,
+                ledgerEntryId: result.ledgerEntry.id,
+                source: "HELPDESK",
+            },
+            ticketId,
+            requestContext,
+        });
+
+        return {
+            user: this.mapUser(targetUser),
+            wallet: this.mapWallet(result.afterWallet),
+            adjustment: {
+                currency,
+                amount,
+                reason,
+                reference,
+                ticketId,
+                ledgerEntry: this.mapWalletLedgerEntry(result.ledgerEntry),
+            },
+        };
+    }
+
+
 }

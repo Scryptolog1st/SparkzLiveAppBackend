@@ -26,6 +26,7 @@ import { AdminProxyGuard } from "../admin-users/admin-proxy.guard";
 import { RequireAdminPermission } from "../admin-users/require-admin-permission.decorator";
 import {
     AddHelpdeskInternalNoteDto,
+    AdjustHelpdeskWalletDto,
     AssignHelpdeskTicketDto,
     CloseHelpdeskLiveChatDto,
     ConvertHelpdeskLiveChatToTicketDto,
@@ -269,6 +270,58 @@ export class AdminHelpdeskController {
         return this.helpdesk.getAdminTicket(
             req.adminUser.id,
             id,
+            this.buildAuditContext(req),
+        );
+    }
+
+    @Get("users/:userId/wallet")
+    @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_TOOLS_VIEW_WALLET)
+    async getUserWallet(@Req() req: any, @Param("userId") userId: string) {
+        return this.helpdesk.getHelpdeskUserWallet(
+            req.adminUser.id,
+            userId,
+            this.buildAuditContext(req),
+        );
+    }
+
+    @Get("users/:userId/wallet/ledger")
+    @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_TOOLS_VIEW_WALLET_LEDGER)
+    async getUserWalletLedger(@Req() req: any, @Param("userId") userId: string) {
+        return this.helpdesk.getHelpdeskUserWalletLedger(
+            req.adminUser.id,
+            userId,
+            this.buildAuditContext(req),
+        );
+    }
+
+    @Post("users/:userId/wallet/adjust-coins")
+    @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_TOOLS_ADJUST_COINS)
+    async adjustUserCoins(
+        @Req() req: any,
+        @Param("userId") userId: string,
+        @Body() body: AdjustHelpdeskWalletDto,
+    ) {
+        return this.helpdesk.adjustHelpdeskUserWallet(
+            req.adminUser.id,
+            userId,
+            "COINS",
+            body,
+            this.buildAuditContext(req),
+        );
+    }
+
+    @Post("users/:userId/wallet/adjust-sparkz")
+    @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_TOOLS_ADJUST_SPARKZ)
+    async adjustUserSparkz(
+        @Req() req: any,
+        @Param("userId") userId: string,
+        @Body() body: AdjustHelpdeskWalletDto,
+    ) {
+        return this.helpdesk.adjustHelpdeskUserWallet(
+            req.adminUser.id,
+            userId,
+            "SPARKZ",
+            body,
             this.buildAuditContext(req),
         );
     }

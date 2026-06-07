@@ -97,6 +97,23 @@ export class AddHelpdeskInternalNoteDto {
     body!: string;
 }
 
+export class AdjustHelpdeskWalletDto {
+    @IsInt()
+    amount!: number;
+
+    @IsString()
+    @MaxLength(500)
+    reason!: string;
+
+    @IsString()
+    @MaxLength(160)
+    reference!: string;
+
+    @IsOptional()
+    @IsUUID()
+    ticketId?: string;
+}
+
 export class AssignHelpdeskTicketDto {
     @IsOptional()
     @IsUUID()
