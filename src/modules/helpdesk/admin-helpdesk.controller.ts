@@ -303,6 +303,26 @@ export class AdminHelpdeskController {
         );
     }
 
+    @Post("tickets/:id/claim")
+    @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_ASSIGN)
+    async claimTicket(@Req() req: any, @Param("id") id: string) {
+        return this.helpdesk.claimTicket(
+            req.adminUser.id,
+            id,
+            this.buildAuditContext(req),
+        );
+    }
+
+    @Post("tickets/:id/release")
+    @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_ASSIGN)
+    async releaseTicket(@Req() req: any, @Param("id") id: string) {
+        return this.helpdesk.releaseTicket(
+            req.adminUser.id,
+            id,
+            this.buildAuditContext(req),
+        );
+    }
+
     @Post("tickets/:id/assign")
     @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_ASSIGN)
     async assign(

@@ -996,44 +996,117 @@ export class HelpdeskService {
             throw new BadRequestException("Closed tickets cannot receive replies.");
         }
 
-        await this.prisma.$transaction([
-            this.prisma.helpdeskTicketMessage.create({
+        const { updatedTicket: updated, autoClaimed } = await this.prisma.$transaction(async (tx) => {
+            const now = new Date();
+
+            const statusUpdate = await tx.helpdeskTicket.updateMany({
+                where: {
+                    id: existing.id,
+                    status: { not: HelpdeskTicketStatus.CLOSED },
+                },
+                data: {
+                    status: HelpdeskTicketStatus.PENDING_USER,
+                    lastMessageAt: now,
+                },
+            });
+
+            if (statusUpdate.count === 0) {
+                throw new BadRequestException("Closed tickets cannot receive replies.");
+            }
+
+            await tx.helpdeskTicketMessage.create({
                 data: {
                     ticketId: existing.id,
                     senderType: HelpdeskTicketMessageSenderType.STAFF,
                     senderAdminUserId: adminUserId,
                     body: messageBody,
                 },
-            }),
-            this.prisma.helpdeskTicket.update({
-                where: { id: existing.id },
-                data: {
-                    status: HelpdeskTicketStatus.PENDING_USER,
-                    lastMessageAt: new Date(),
+            });
+
+            const autoClaimResult = await tx.helpdeskTicket.updateMany({
+                where: {
+                    id: existing.id,
+                    assignedAdminUserId: null,
                 },
-            }),
-            this.prisma.helpdeskTicketEvent.create({
+                data: {
+                    assignedAdminUserId: adminUserId,
+                },
+            });
+            const autoClaimed = autoClaimResult.count > 0;
+
+            await tx.helpdeskTicketEvent.create({
                 data: {
                     ticketId: existing.id,
                     actorAdminUserId: adminUserId,
                     eventType: HelpdeskTicketEventType.MESSAGE_ADDED,
                     metadataJson: {
                         senderType: HelpdeskTicketMessageSenderType.STAFF,
+                        autoClaimed,
                     },
                 },
-            }),
-        ]);
+            });
 
-        const updated = await this.findTicketByIdOrNumber(existing.id);
+            if (autoClaimed) {
+                await tx.helpdeskTicketEvent.create({
+                    data: {
+                        ticketId: existing.id,
+                        actorAdminUserId: adminUserId,
+                        eventType: HelpdeskTicketEventType.ASSIGNED,
+                        beforeJson: this.toJsonObject({
+                            assignedAdminUserId: null,
+                        }),
+                        afterJson: this.toJsonObject({
+                            assignedAdminUserId: adminUserId,
+                        }),
+                        metadataJson: this.toJsonObject({
+                            reason: "FIRST_STAFF_REPLY_AUTO_CLAIM",
+                        }),
+                    },
+                });
+            }
+
+            const updatedTicket = await tx.helpdeskTicket.findUniqueOrThrow({
+                where: { id: existing.id },
+                include: this.ticketInclude(true),
+            });
+
+            return { updatedTicket, autoClaimed };
+        });
 
         await this.addAdminAuditLog({
             actorAdminUserId: adminUserId,
-            ticket: updated ?? existing,
+            ticket: updated,
             actionType: "CREATE",
             actionCode: "helpdesk.ticket.reply",
             actionLabel: "Replied to helpdesk ticket",
             requestContext,
         });
+
+        if (autoClaimed) {
+            await this.addAdminAuditLog({
+                actorAdminUserId: adminUserId,
+                ticket: updated,
+                actionType: "UPDATE",
+                actionCode: "helpdesk.ticket.claim",
+                actionLabel: "Auto-claimed helpdesk ticket",
+                beforeState: {
+                    assignedAdminUserId: null,
+                },
+                afterState: {
+                    assignedAdminUserId: adminUserId,
+                },
+                diff: {
+                    assignedAdminUserId: {
+                        before: null,
+                        after: adminUserId,
+                    },
+                },
+                metadata: {
+                    reason: "FIRST_STAFF_REPLY_AUTO_CLAIM",
+                },
+                requestContext,
+            });
+        }
 
         return this.mapTicketDetail(updated, canViewRealStaffIdentity, includeInternalNotes);
     }
@@ -1091,11 +1164,77 @@ export class HelpdeskService {
         return this.mapTicketDetail(updated, canViewRealStaffIdentity, includeInternalNotes);
     }
 
+    async claimTicket(
+        adminUserId: string,
+        id: string,
+        requestContext?: AdminAuditRequestContext | null,
+    ) {
+        await this.requireAdmin(adminUserId);
+
+        const existing = await this.findTicketByIdOrNumber(id);
+
+        if (!existing) {
+            throw new NotFoundException("Helpdesk ticket not found.");
+        }
+
+        if (
+            existing.assignedAdminUserId &&
+            existing.assignedAdminUserId !== adminUserId
+        ) {
+            throw new BadRequestException(
+                "Ticket is already assigned. Use the assignment endpoint to transfer ownership.",
+            );
+        }
+
+        return this.assignTicket(
+            adminUserId,
+            existing.id,
+            { assignedAdminUserId: adminUserId },
+            requestContext,
+            {
+                actionCode: "helpdesk.ticket.claim",
+                actionLabel: "Claimed helpdesk ticket",
+                expectedAssignedAdminUserId: existing.assignedAdminUserId ?? null,
+            },
+        );
+    }
+
+    async releaseTicket(
+        adminUserId: string,
+        id: string,
+        requestContext?: AdminAuditRequestContext | null,
+    ) {
+        await this.requireAdmin(adminUserId);
+
+        const existing = await this.findTicketByIdOrNumber(id);
+
+        if (!existing) {
+            throw new NotFoundException("Helpdesk ticket not found.");
+        }
+
+        return this.assignTicket(
+            adminUserId,
+            existing.id,
+            { assignedAdminUserId: undefined },
+            requestContext,
+            {
+                actionCode: "helpdesk.ticket.release",
+                actionLabel: "Released helpdesk ticket",
+                expectedAssignedAdminUserId: existing.assignedAdminUserId ?? null,
+            },
+        );
+    }
+
     async assignTicket(
         adminUserId: string,
         id: string,
         body: AssignHelpdeskTicketDto,
         requestContext?: AdminAuditRequestContext | null,
+        auditAction?: {
+            actionCode: string;
+            actionLabel: string;
+            expectedAssignedAdminUserId?: string | null;
+        },
     ) {
         const actor = await this.requireAdmin(adminUserId);
         const [canViewRealStaffIdentity, includeInternalNotes] = await Promise.all([
@@ -1119,12 +1258,37 @@ export class HelpdeskService {
             throw new NotFoundException("Helpdesk ticket not found.");
         }
 
+        const currentAssignedAdminUserId = existing.assignedAdminUserId ?? null;
+        const nextAssignedAdminUserId = body.assignedAdminUserId ?? null;
+
+        if (currentAssignedAdminUserId === nextAssignedAdminUserId) {
+            return this.mapTicketDetail(existing, canViewRealStaffIdentity, includeInternalNotes);
+        }
+
+        const auditActionCode = auditAction?.actionCode ?? "helpdesk.ticket.assign";
+        const auditActionLabel = auditAction?.actionLabel ?? "Assigned helpdesk ticket";
+        const expectedAssignedAdminUserId =
+            auditAction?.expectedAssignedAdminUserId ?? currentAssignedAdminUserId;
+
         const updated = await this.prisma.$transaction(async (tx) => {
-            const updatedTicket = await tx.helpdeskTicket.update({
-                where: { id: existing.id },
+            const assignmentWhere = {
+                id: existing.id,
+                assignedAdminUserId: expectedAssignedAdminUserId,
+            };
+
+            const assignmentUpdate = await tx.helpdeskTicket.updateMany({
+                where: assignmentWhere,
                 data: {
-                    assignedAdminUserId: body.assignedAdminUserId ?? null,
+                    assignedAdminUserId: nextAssignedAdminUserId,
                 },
+            });
+
+            if (assignmentUpdate.count === 0) {
+                throw new BadRequestException("Ticket assignment changed. Refresh and try again.");
+            }
+
+            const updatedTicket = await tx.helpdeskTicket.findUniqueOrThrow({
+                where: { id: existing.id },
                 include: this.ticketInclude(true),
             });
 
@@ -1134,10 +1298,13 @@ export class HelpdeskService {
                     actorAdminUserId: adminUserId,
                     eventType: HelpdeskTicketEventType.ASSIGNED,
                     beforeJson: this.toJsonObject({
-                        assignedAdminUserId: existing.assignedAdminUserId ?? null,
+                        assignedAdminUserId: currentAssignedAdminUserId,
                     }),
                     afterJson: this.toJsonObject({
                         assignedAdminUserId: updatedTicket.assignedAdminUserId ?? null,
+                    }),
+                    metadataJson: this.toJsonObject({
+                        actionCode: auditActionCode,
                     }),
                 },
             });
@@ -1149,17 +1316,17 @@ export class HelpdeskService {
             actorAdminUserId: adminUserId,
             ticket: updated,
             actionType: "UPDATE",
-            actionCode: "helpdesk.ticket.assign",
-            actionLabel: "Assigned helpdesk ticket",
+            actionCode: auditActionCode,
+            actionLabel: auditActionLabel,
             beforeState: {
-                assignedAdminUserId: existing.assignedAdminUserId ?? null,
+                assignedAdminUserId: currentAssignedAdminUserId,
             },
             afterState: {
                 assignedAdminUserId: updated.assignedAdminUserId ?? null,
             },
             diff: {
                 assignedAdminUserId: {
-                    before: existing.assignedAdminUserId ?? null,
+                    before: currentAssignedAdminUserId,
                     after: updated.assignedAdminUserId ?? null,
                 },
             },
