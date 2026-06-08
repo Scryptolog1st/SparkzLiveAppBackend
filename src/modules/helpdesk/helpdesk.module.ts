@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 
 import { AdminAuditModule } from "../admin-audit/admin-audit.module";
+import { ApiObservabilityModule } from "../api-observability/api-observability.module";
 import { AdminPermissionGuard } from "../admin-users/admin-permission.guard";
 import { AdminProxyGuard } from "../admin-users/admin-proxy.guard";
 import { AdminRolePermissionsService } from "../admin-users/admin-role-permissions.service";
@@ -12,7 +13,7 @@ import { HelpdeskPhase2Service } from "./helpdesk-phase2.service";
 import { HelpdeskService } from "./helpdesk.service";
 
 @Module({
-    imports: [PrismaModule, AdminAuditModule, NotificationsModule],
+    imports: [PrismaModule, AdminAuditModule, ApiObservabilityModule, NotificationsModule],
     controllers: [HelpdeskController, AdminHelpdeskController],
     providers: [
         HelpdeskService,

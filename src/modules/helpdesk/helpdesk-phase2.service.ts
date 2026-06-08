@@ -21,6 +21,7 @@ import {
 import { randomBytes } from "crypto";
 
 import { AdminAuditService } from "../admin-audit/admin-audit.service";
+import { SystemLogEventsService } from "../api-observability/system-log-events.service";
 import { getAnonymousStaffLabel } from "../admin-users/admin-identity-utils";
 import { ADMIN_PERMISSIONS, hasAdminPermission } from "../admin-users/admin-permissions";
 import { AdminRolePermissionsService } from "../admin-users/admin-role-permissions.service";
@@ -54,7 +55,37 @@ export class HelpdeskPhase2Service {
         private readonly adminAudit: AdminAuditService,
         private readonly adminRolePermissions: AdminRolePermissionsService,
         private readonly notifications: NotificationsService,
+        private readonly systemLogEvents: SystemLogEventsService,
     ) { }
+
+    private async recordNotificationFailure(args: {
+        notification: "live_chat_reply";
+        threadId: string;
+        reason: string;
+    }) {
+        try {
+            await this.systemLogEvents.writeDeduped({
+                source: "SYSTEM",
+                level: "WARN",
+                category: "HELPDESK_NOTIFICATION_FAILURE",
+                eventCode: "helpdesk.notification.failure",
+                message: "Helpdesk notification delivery failed.",
+                detailsJson: {
+                    notification: args.notification,
+                    threadId: args.threadId,
+                    reason: args.reason,
+                },
+                fingerprint: `helpdesk.notification.failure:${args.notification}:${args.threadId}:${args.reason}`,
+                dedupeWindowMs: 5 * 60 * 1000,
+            });
+        } catch (metricError) {
+            this.logger.warn(
+                `Failed to record helpdesk notification failure metric: ${
+                    metricError instanceof Error ? metricError.message : String(metricError)
+                }`,
+            );
+        }
+    }
 
     private async notifyUserOfLiveChatReply(thread: {
         id: string;
@@ -1104,11 +1135,17 @@ export class HelpdeskPhase2Service {
         });
 
         await this.notifyUserOfLiveChatReply(updated).catch((error) => {
+            const reason = error instanceof Error ? error.message : String(error);
+
             this.logger.warn(
-                `Failed to send helpdesk live chat reply notification for ${updated.id}: ${
-                    error instanceof Error ? error.message : String(error)
-                }`,
+                `Failed to send helpdesk live chat reply notification for ${updated.id}: ${reason}`,
             );
+
+            void this.recordNotificationFailure({
+                notification: "live_chat_reply",
+                threadId: updated.id,
+                reason,
+            });
         });
 
         return this.mapLiveChatThread(updated, canViewRealStaffIdentity, true);
