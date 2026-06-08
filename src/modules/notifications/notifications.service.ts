@@ -59,6 +59,8 @@ export class NotificationsService {
     'MILESTONE_REACHED',
     'BATTLE_ENDED',
     'MODERATION',
+    'HELPDESK_TICKET_REPLY',
+    'HELPDESK_LIVE_CHAT_REPLY',
   ]);
 
   constructor(private readonly prisma: PrismaService) { }

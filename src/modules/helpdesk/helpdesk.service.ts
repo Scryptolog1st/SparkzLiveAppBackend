@@ -2,6 +2,7 @@ import {
     BadRequestException,
     ForbiddenException,
     Injectable,
+    Logger,
     NotFoundException,
     UnauthorizedException,
 } from "@nestjs/common";
@@ -24,6 +25,7 @@ import { getAnonymousStaffLabel } from "../admin-users/admin-identity-utils";
 import { ADMIN_PERMISSIONS, hasAdminPermission } from "../admin-users/admin-permissions";
 import { AdminRolePermissionsService } from "../admin-users/admin-role-permissions.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import {
     AddHelpdeskInternalNoteDto,
     AdjustHelpdeskWalletDto,
@@ -57,11 +59,40 @@ type HelpdeskWalletCurrency = "COINS" | "SPARKZ";
 
 @Injectable()
 export class HelpdeskService {
+    private readonly logger = new Logger(HelpdeskService.name);
+
     constructor(
         private readonly prisma: PrismaService,
         private readonly adminAudit: AdminAuditService,
         private readonly adminRolePermissions: AdminRolePermissionsService,
+        private readonly notifications: NotificationsService,
     ) { }
+
+    private async notifyUserOfTicketReply(ticket: {
+        id: string;
+        ticketNumber: string;
+        subject: string;
+        userId: string;
+        lastMessageAt?: Date | null;
+    }) {
+        await this.notifications.createAndSendToUsers({
+            userIds: [ticket.userId],
+            notificationType: "HELPDESK_TICKET_REPLY",
+            category: "TRANSACTIONAL",
+            title: "Support Agent replied to your ticket",
+            body: `Ticket ${ticket.ticketNumber}: ${ticket.subject}`,
+            payload: {
+                source: "helpdesk",
+                kind: "ticket_reply",
+                ticketId: ticket.id,
+                ticketNumber: ticket.ticketNumber,
+                route: "helpdesk_ticket",
+            },
+            dedupeKey: `helpdesk-ticket-reply:${ticket.id}:${ticket.lastMessageAt?.getTime() ?? Date.now()}`,
+            createInbox: true,
+            sendPush: true,
+        });
+    }
 
     private normalizeOptionalString(value?: string | null) {
         const normalized = String(value || "").trim();
@@ -1110,6 +1141,14 @@ export class HelpdeskService {
                 requestContext,
             });
         }
+
+        await this.notifyUserOfTicketReply(updated).catch((error) => {
+            this.logger.warn(
+                `Failed to send helpdesk ticket reply notification for ${updated.id}: ${
+                    error instanceof Error ? error.message : String(error)
+                }`,
+            );
+        });
 
         return this.mapTicketDetail(updated, canViewRealStaffIdentity, includeInternalNotes);
     }
