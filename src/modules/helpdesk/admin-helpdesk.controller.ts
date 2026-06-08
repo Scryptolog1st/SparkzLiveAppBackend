@@ -92,12 +92,10 @@ export class AdminHelpdeskController {
 
     private shouldTrustProxyHeaders(req: Request) {
         const expressTrustProxy = req.app?.get?.("trust proxy");
+        const trustProxyHeaderSetting =
+            process.env.ADMIN_AUDIT_TRUST_PROXY_HEADERS ?? process.env.TRUST_PROXY;
 
-        return (
-            Boolean(expressTrustProxy) ||
-            this.isTruthyConfig(process.env.ADMIN_AUDIT_TRUST_PROXY_HEADERS) ||
-            this.isTruthyConfig(process.env.TRUST_PROXY)
-        );
+        return Boolean(expressTrustProxy) || this.isTruthyConfig(trustProxyHeaderSetting);
     }
 
     private extractIp(req: Request) {
