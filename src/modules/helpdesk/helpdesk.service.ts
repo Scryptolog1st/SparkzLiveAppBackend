@@ -70,11 +70,48 @@ export class HelpdeskService {
         private readonly systemLogEvents: SystemLogEventsService,
     ) { }
 
+    private sanitizeNotificationFailureReason(value: string) {
+        return (
+            String(value || "")
+                .replace(/\s+/g, " ")
+                .replace(/ExponentPushToken\[[^\]]+\]/g, "ExponentPushToken[redacted]")
+                .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [redacted]")
+                .replace(/token=([A-Za-z0-9._-]+)/gi, "token=[redacted]")
+                .trim()
+                .slice(0, 200) || "Unknown notification failure"
+        );
+    }
+
+    private getNotificationFailureReasonCode(value: string) {
+        const normalized = String(value || "").toLowerCase();
+
+        if (normalized.includes("timeout")) {
+            return "provider_timeout";
+        }
+
+        if (normalized.includes("network") || normalized.includes("fetch") || normalized.includes("econn")) {
+            return "provider_network";
+        }
+
+        if (normalized.includes("token") || normalized.includes("device")) {
+            return "provider_token_error";
+        }
+
+        if (normalized.includes("invalid") || normalized.includes("payload")) {
+            return "invalid_payload";
+        }
+
+        return "delivery_error";
+    }
+
     private async recordNotificationFailure(args: {
         notification: "ticket_reply";
         ticketId: string;
         reason: string;
     }) {
+        const safeReason = this.sanitizeNotificationFailureReason(args.reason);
+        const reasonCode = this.getNotificationFailureReasonCode(args.reason);
+
         try {
             await this.systemLogEvents.writeDeduped({
                 source: "SYSTEM",
@@ -85,9 +122,10 @@ export class HelpdeskService {
                 detailsJson: {
                     notification: args.notification,
                     ticketId: args.ticketId,
-                    reason: args.reason,
+                    reason: safeReason,
+                    reasonCode,
                 },
-                fingerprint: `helpdesk.notification.failure:${args.notification}:${args.ticketId}:${args.reason}`,
+                fingerprint: `helpdesk.notification.failure:${args.notification}:${args.ticketId}:${reasonCode}`,
                 dedupeWindowMs: 5 * 60 * 1000,
             });
         } catch (metricError) {
