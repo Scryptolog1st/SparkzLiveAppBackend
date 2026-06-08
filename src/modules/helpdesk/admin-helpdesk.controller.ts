@@ -85,8 +85,27 @@ export class AdminHelpdeskController {
     }
 
     private extractIp(req: Request) {
-        const directIp = req.ip || req.socket?.remoteAddress || "";
-        return this.normalizeOptionalString(directIp);
+        const forwardedFor = this.getHeader(req, "x-forwarded-for");
+        if (forwardedFor) {
+            const first = forwardedFor
+                .split(",")
+                .map((part) => part.trim())
+                .find(Boolean);
+
+            if (first) {
+                return this.normalizeOptionalString(first);
+            }
+        }
+
+        const forwardedIp =
+            this.getHeader(req, "cf-connecting-ip") ||
+            this.getHeader(req, "x-real-ip") ||
+            this.getHeader(req, "x-client-ip") ||
+            req.ip ||
+            req.socket?.remoteAddress ||
+            "";
+
+        return this.normalizeOptionalString(forwardedIp);
     }
 
     private buildAuditContext(req: Request): AdminRequestContext {

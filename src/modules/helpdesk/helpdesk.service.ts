@@ -956,6 +956,8 @@ export class HelpdeskService {
         id: string,
         requestContext?: AdminAuditRequestContext | null,
     ) {
+        void requestContext;
+
         const actor = await this.requireAdmin(adminUserId);
         const [canViewRealStaffIdentity, includeInternalNotes] = await Promise.all([
             this.canViewRealStaffIdentity(actor.role),
@@ -967,16 +969,6 @@ export class HelpdeskService {
         if (!ticket) {
             throw new NotFoundException("Helpdesk ticket not found.");
         }
-
-        await this.addAdminAuditLog({
-            actorAdminUserId: adminUserId,
-            ticket,
-            actionType: "VIEW",
-            actionCode: "helpdesk.ticket.view",
-            actionLabel: "Viewed helpdesk ticket",
-            metadata: { source: "admin_helpdesk.getTicket" },
-            requestContext,
-        });
 
         return this.mapTicketDetail(ticket, canViewRealStaffIdentity, includeInternalNotes);
     }
@@ -1910,7 +1902,9 @@ export class HelpdeskService {
         userId: string,
         requestContext?: AdminAuditRequestContext | null,
     ) {
-        const actor = await this.requireAdmin(adminUserId);
+        void requestContext;
+
+        await this.requireAdmin(adminUserId);
         const targetUser = await this.requireHelpdeskTargetUser(userId);
 
         const wallet = await this.prisma.wallet.upsert({
@@ -1921,19 +1915,6 @@ export class HelpdeskService {
                 diamondsEarned: 0,
             },
             update: {},
-        });
-
-        await this.addWalletAuditLog({
-            actorAdminUserId: actor.id,
-            targetUser,
-            actionCode: "helpdesk.wallet.view",
-            actionLabel: "Viewed helpdesk wallet balances",
-            beforeState: null,
-            afterState: this.mapWallet(wallet),
-            metadata: {
-                source: "HELPDESK",
-            },
-            requestContext,
         });
 
         return {
@@ -1947,7 +1928,9 @@ export class HelpdeskService {
         userId: string,
         requestContext?: AdminAuditRequestContext | null,
     ) {
-        const actor = await this.requireAdmin(adminUserId);
+        void requestContext;
+
+        await this.requireAdmin(adminUserId);
         const targetUser = await this.requireHelpdeskTargetUser(userId);
 
         const [wallet, ledgerEntries] = await Promise.all([
@@ -1966,21 +1949,6 @@ export class HelpdeskService {
                 take: 50,
             }),
         ]);
-
-        await this.addWalletAuditLog({
-            actorAdminUserId: actor.id,
-            targetUser,
-            actionCode: "helpdesk.wallet.ledger.view",
-            actionLabel: "Viewed helpdesk wallet ledger",
-            beforeState: null,
-            afterState: {
-                ledgerEntryCount: ledgerEntries.length,
-            },
-            metadata: {
-                source: "HELPDESK",
-            },
-            requestContext,
-        });
 
         return {
             user: this.mapUser(targetUser),
