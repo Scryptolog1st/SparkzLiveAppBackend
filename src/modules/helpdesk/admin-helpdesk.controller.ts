@@ -84,7 +84,29 @@ export class AdminHelpdeskController {
         return normalized ? normalized : null;
     }
 
+    private isTruthyConfig(value?: string | null) {
+        return ["1", "true", "yes", "on"].includes(
+            String(value || "").trim().toLowerCase(),
+        );
+    }
+
+    private shouldTrustProxyHeaders(req: Request) {
+        const expressTrustProxy = req.app?.get?.("trust proxy");
+
+        return (
+            Boolean(expressTrustProxy) ||
+            this.isTruthyConfig(process.env.ADMIN_AUDIT_TRUST_PROXY_HEADERS) ||
+            this.isTruthyConfig(process.env.TRUST_PROXY)
+        );
+    }
+
     private extractIp(req: Request) {
+        const directIp = this.normalizeOptionalString(req.ip || req.socket?.remoteAddress || "");
+
+        if (!this.shouldTrustProxyHeaders(req)) {
+            return directIp;
+        }
+
         const forwardedFor = this.getHeader(req, "x-forwarded-for");
         if (forwardedFor) {
             const first = forwardedFor
@@ -101,11 +123,9 @@ export class AdminHelpdeskController {
             this.getHeader(req, "cf-connecting-ip") ||
             this.getHeader(req, "x-real-ip") ||
             this.getHeader(req, "x-client-ip") ||
-            req.ip ||
-            req.socket?.remoteAddress ||
             "";
 
-        return this.normalizeOptionalString(forwardedIp);
+        return this.normalizeOptionalString(forwardedIp) || directIp;
     }
 
     private buildAuditContext(req: Request): AdminRequestContext {

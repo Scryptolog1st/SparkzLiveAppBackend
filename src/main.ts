@@ -10,6 +10,18 @@ async function bootstrap() {
     rawBody: true,
   });
 
+  const trustProxyHeaderSetting = String(
+    process.env.ADMIN_AUDIT_TRUST_PROXY_HEADERS ?? process.env.TRUST_PROXY ?? "",
+  ).trim().toLowerCase();
+
+  const shouldTrustProxyHeaders = ["1", "true", "yes", "on"].includes(
+    trustProxyHeaderSetting,
+  );
+
+  if (shouldTrustProxyHeaders) {
+    app.set("trust proxy", true);
+  }
+
   app.enableCors({
     origin: [
       "http://localhost:5173",
