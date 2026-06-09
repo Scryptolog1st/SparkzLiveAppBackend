@@ -1180,15 +1180,16 @@ export class HelpdeskService {
 
         await this.notifyUserOfTicketReply(updated).catch((error) => {
             const reason = error instanceof Error ? error.message : String(error);
+            const safeReason = sanitizeNotificationFailureReason(reason);
 
             this.logger.warn(
-                `Failed to send helpdesk ticket reply notification for ${updated.id}: ${reason}`,
+                `Failed to send helpdesk ticket reply notification for ${updated.id}: ${safeReason}`,
             );
 
             void this.recordNotificationFailure({
                 notification: "ticket_reply",
                 ticketId: updated.id,
-                reason,
+                reason: safeReason,
             });
         });
 

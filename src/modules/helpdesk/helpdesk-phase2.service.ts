@@ -1141,15 +1141,16 @@ export class HelpdeskPhase2Service {
 
         await this.notifyUserOfLiveChatReply(updated).catch((error) => {
             const reason = error instanceof Error ? error.message : String(error);
+            const safeReason = sanitizeNotificationFailureReason(reason);
 
             this.logger.warn(
-                `Failed to send helpdesk live chat reply notification for ${updated.id}: ${reason}`,
+                `Failed to send helpdesk live chat reply notification for ${updated.id}: ${safeReason}`,
             );
 
             void this.recordNotificationFailure({
                 notification: "live_chat_reply",
                 threadId: updated.id,
-                reason,
+                reason: safeReason,
             });
         });
 
