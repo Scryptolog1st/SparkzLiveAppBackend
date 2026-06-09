@@ -3,6 +3,7 @@ import {
     ConflictException,
     ForbiddenException,
     Injectable,
+    Logger,
     NotFoundException,
     UnauthorizedException,
 } from "@nestjs/common";
@@ -20,10 +21,13 @@ import {
 import { randomBytes } from "crypto";
 
 import { AdminAuditService } from "../admin-audit/admin-audit.service";
+import { SystemLogEventsService } from "../api-observability/system-log-events.service";
 import { getAnonymousStaffLabel } from "../admin-users/admin-identity-utils";
 import { ADMIN_PERMISSIONS, hasAdminPermission } from "../admin-users/admin-permissions";
 import { AdminRolePermissionsService } from "../admin-users/admin-role-permissions.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { NotificationsService } from "../notifications/notifications.service";
+import { getNotificationFailureReasonCode, sanitizeNotificationFailureReason } from "./helpdesk-notification-utils";
 import {
     CloseHelpdeskLiveChatDto,
     ConvertHelpdeskLiveChatToTicketDto,
@@ -44,13 +48,73 @@ type JsonRecord = Record<string, unknown>;
 
 @Injectable()
 export class HelpdeskPhase2Service {
+    private readonly logger = new Logger(HelpdeskPhase2Service.name);
     private readonly liveChatClaimMs = 15 * 60 * 1000;
 
     constructor(
         private readonly prisma: PrismaService,
         private readonly adminAudit: AdminAuditService,
         private readonly adminRolePermissions: AdminRolePermissionsService,
+        private readonly notifications: NotificationsService,
+        private readonly systemLogEvents: SystemLogEventsService,
     ) { }
+
+    private async recordNotificationFailure(args: {
+        notification: "live_chat_reply";
+        threadId: string;
+        reason: string;
+    }) {
+        const safeReason = sanitizeNotificationFailureReason(args.reason);
+        const reasonCode = getNotificationFailureReasonCode(args.reason);
+
+        try {
+            await this.systemLogEvents.writeDeduped({
+                source: "SYSTEM",
+                level: "WARN",
+                category: "HELPDESK_NOTIFICATION_FAILURE",
+                eventCode: "helpdesk.notification.failure",
+                message: "Helpdesk notification delivery failed.",
+                detailsJson: {
+                    notification: args.notification,
+                    threadId: args.threadId,
+                    reason: safeReason,
+                    reasonCode,
+                },
+                fingerprint: `helpdesk.notification.failure:${args.notification}:${args.threadId}:${reasonCode}`,
+                dedupeWindowMs: 5 * 60 * 1000,
+            });
+        } catch (metricError) {
+            this.logger.warn(
+                `Failed to record helpdesk notification failure metric: ${
+                    metricError instanceof Error ? metricError.message : String(metricError)
+                }`,
+            );
+        }
+    }
+
+    private async notifyUserOfLiveChatReply(thread: {
+        id: string;
+        subject?: string | null;
+        userId: string;
+        lastMessageAt?: Date | null;
+    }) {
+        await this.notifications.createAndSendToUsers({
+            userIds: [thread.userId],
+            notificationType: "HELPDESK_LIVE_CHAT_REPLY",
+            category: "TRANSACTIONAL",
+            title: "Support Agent replied to your live chat",
+            body: "Support Agent replied to your live chat.",
+            payload: {
+                source: "helpdesk",
+                kind: "live_chat_reply",
+                threadId: thread.id,
+                route: "helpdesk_live_chat",
+            },
+            dedupeKey: `helpdesk-live-chat-reply:${thread.id}:${thread.lastMessageAt?.getTime() ?? Date.now()}`,
+            createInbox: true,
+            sendPush: true,
+        });
+    }
 
     private normalizeOptionalString(value?: string | null) {
         const normalized = String(value || "").trim();
@@ -1071,6 +1135,21 @@ export class HelpdeskPhase2Service {
             targetUserId: updated.userId,
             metadata: { senderType: HelpdeskLiveChatMessageSenderType.STAFF },
             requestContext,
+        });
+
+        await this.notifyUserOfLiveChatReply(updated).catch((error) => {
+            const reason = error instanceof Error ? error.message : String(error);
+            const safeReason = sanitizeNotificationFailureReason(reason);
+
+            this.logger.warn(
+                `Failed to send helpdesk live chat reply notification for ${updated.id}: ${safeReason}`,
+            );
+
+            void this.recordNotificationFailure({
+                notification: "live_chat_reply",
+                threadId: updated.id,
+                reason,
+            });
         });
 
         return this.mapLiveChatThread(updated, canViewRealStaffIdentity, true);

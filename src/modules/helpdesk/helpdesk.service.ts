@@ -2,6 +2,7 @@ import {
     BadRequestException,
     ForbiddenException,
     Injectable,
+    Logger,
     NotFoundException,
     UnauthorizedException,
 } from "@nestjs/common";
@@ -20,10 +21,13 @@ import {
 import { randomBytes } from "crypto";
 
 import { AdminAuditService } from "../admin-audit/admin-audit.service";
+import { SystemLogEventsService } from "../api-observability/system-log-events.service";
 import { getAnonymousStaffLabel } from "../admin-users/admin-identity-utils";
 import { ADMIN_PERMISSIONS, hasAdminPermission } from "../admin-users/admin-permissions";
 import { AdminRolePermissionsService } from "../admin-users/admin-role-permissions.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { NotificationsService } from "../notifications/notifications.service";
+import { getNotificationFailureReasonCode, sanitizeNotificationFailureReason } from "./helpdesk-notification-utils";
 import {
     AddHelpdeskInternalNoteDto,
     AdjustHelpdeskWalletDto,
@@ -57,11 +61,74 @@ type HelpdeskWalletCurrency = "COINS" | "SPARKZ";
 
 @Injectable()
 export class HelpdeskService {
+    private readonly logger = new Logger(HelpdeskService.name);
+
     constructor(
         private readonly prisma: PrismaService,
         private readonly adminAudit: AdminAuditService,
         private readonly adminRolePermissions: AdminRolePermissionsService,
+        private readonly notifications: NotificationsService,
+        private readonly systemLogEvents: SystemLogEventsService,
     ) { }
+
+    private async recordNotificationFailure(args: {
+        notification: "ticket_reply";
+        ticketId: string;
+        reason: string;
+    }) {
+        const safeReason = sanitizeNotificationFailureReason(args.reason);
+        const reasonCode = getNotificationFailureReasonCode(args.reason);
+
+        try {
+            await this.systemLogEvents.writeDeduped({
+                source: "SYSTEM",
+                level: "WARN",
+                category: "HELPDESK_NOTIFICATION_FAILURE",
+                eventCode: "helpdesk.notification.failure",
+                message: "Helpdesk notification delivery failed.",
+                detailsJson: {
+                    notification: args.notification,
+                    ticketId: args.ticketId,
+                    reason: safeReason,
+                    reasonCode,
+                },
+                fingerprint: `helpdesk.notification.failure:${args.notification}:${args.ticketId}:${reasonCode}`,
+                dedupeWindowMs: 5 * 60 * 1000,
+            });
+        } catch (metricError) {
+            this.logger.warn(
+                `Failed to record helpdesk notification failure metric: ${
+                    metricError instanceof Error ? metricError.message : String(metricError)
+                }`,
+            );
+        }
+    }
+
+    private async notifyUserOfTicketReply(ticket: {
+        id: string;
+        ticketNumber: string;
+        subject: string;
+        userId: string;
+        lastMessageAt?: Date | null;
+    }) {
+        await this.notifications.createAndSendToUsers({
+            userIds: [ticket.userId],
+            notificationType: "HELPDESK_TICKET_REPLY",
+            category: "TRANSACTIONAL",
+            title: "Support Agent replied to your ticket",
+            body: "Support Agent replied to your ticket.",
+            payload: {
+                source: "helpdesk",
+                kind: "ticket_reply",
+                ticketId: ticket.id,
+                ticketNumber: ticket.ticketNumber,
+                route: "helpdesk_ticket",
+            },
+            dedupeKey: `helpdesk-ticket-reply:${ticket.id}:${ticket.lastMessageAt?.getTime() ?? Date.now()}`,
+            createInbox: true,
+            sendPush: true,
+        });
+    }
 
     private normalizeOptionalString(value?: string | null) {
         const normalized = String(value || "").trim();
@@ -1110,6 +1177,21 @@ export class HelpdeskService {
                 requestContext,
             });
         }
+
+        await this.notifyUserOfTicketReply(updated).catch((error) => {
+            const reason = error instanceof Error ? error.message : String(error);
+            const safeReason = sanitizeNotificationFailureReason(reason);
+
+            this.logger.warn(
+                `Failed to send helpdesk ticket reply notification for ${updated.id}: ${safeReason}`,
+            );
+
+            void this.recordNotificationFailure({
+                notification: "ticket_reply",
+                ticketId: updated.id,
+                reason,
+            });
+        });
 
         return this.mapTicketDetail(updated, canViewRealStaffIdentity, includeInternalNotes);
     }
