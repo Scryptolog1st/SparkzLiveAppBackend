@@ -89,7 +89,7 @@ export class HelpdeskService {
                 detailsJson: {
                     notification: args.notification,
                     ticketId: args.ticketId,
-                    reason: safeReason,
+                    reason,
                     reasonCode,
                 },
                 fingerprint: `helpdesk.notification.failure:${args.notification}:${args.ticketId}:${reasonCode}`,
@@ -1189,7 +1189,7 @@ export class HelpdeskService {
             void this.recordNotificationFailure({
                 notification: "ticket_reply",
                 ticketId: updated.id,
-                reason: safeReason,
+                reason,
             });
         });
 

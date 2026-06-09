@@ -77,7 +77,7 @@ export class HelpdeskPhase2Service {
                 detailsJson: {
                     notification: args.notification,
                     threadId: args.threadId,
-                    reason: safeReason,
+                    reason,
                     reasonCode,
                 },
                 fingerprint: `helpdesk.notification.failure:${args.notification}:${args.threadId}:${reasonCode}`,
@@ -1150,7 +1150,7 @@ export class HelpdeskPhase2Service {
             void this.recordNotificationFailure({
                 notification: "live_chat_reply",
                 threadId: updated.id,
-                reason: safeReason,
+                reason,
             });
         });
 
