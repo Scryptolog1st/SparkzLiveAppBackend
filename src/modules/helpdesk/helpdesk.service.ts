@@ -89,7 +89,7 @@ export class HelpdeskService {
                 detailsJson: {
                     notification: args.notification,
                     ticketId: args.ticketId,
-                    reason,
+                    reason: safeReason,
                     reasonCode,
                 },
                 fingerprint: `helpdesk.notification.failure:${args.notification}:${args.ticketId}:${reasonCode}`,
@@ -116,7 +116,7 @@ export class HelpdeskService {
             notificationType: "HELPDESK_TICKET_REPLY",
             category: "TRANSACTIONAL",
             title: "Support Agent replied to your ticket",
-            body: `Ticket ${ticket.ticketNumber}: ${ticket.subject}`,
+            body: "Support Agent replied to your ticket.",
             payload: {
                 source: "helpdesk",
                 kind: "ticket_reply",

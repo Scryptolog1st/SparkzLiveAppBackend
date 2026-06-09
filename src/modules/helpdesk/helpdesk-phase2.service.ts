@@ -77,7 +77,7 @@ export class HelpdeskPhase2Service {
                 detailsJson: {
                     notification: args.notification,
                     threadId: args.threadId,
-                    reason,
+                    reason: safeReason,
                     reasonCode,
                 },
                 fingerprint: `helpdesk.notification.failure:${args.notification}:${args.threadId}:${reasonCode}`,
@@ -103,9 +103,7 @@ export class HelpdeskPhase2Service {
             notificationType: "HELPDESK_LIVE_CHAT_REPLY",
             category: "TRANSACTIONAL",
             title: "Support Agent replied to your live chat",
-            body: thread.subject
-                ? `Support Agent replied: ${thread.subject}`
-                : "Support Agent replied to your live chat.",
+            body: "Support Agent replied to your live chat.",
             payload: {
                 source: "helpdesk",
                 kind: "live_chat_reply",
