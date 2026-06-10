@@ -413,7 +413,21 @@ export class HelpdeskService {
         };
     }
 
+    private getLatestTicketMessageSummary(ticket: any) {
+        const messages = Array.isArray(ticket?.messages) ? ticket.messages : [];
+        const latestMessage = messages[0] ?? null;
+
+        return {
+            senderType: latestMessage?.senderType ?? null,
+            createdAt: latestMessage?.createdAt
+                ? latestMessage.createdAt.toISOString()
+                : null,
+        };
+    }
+
     private mapTicketListItem(ticket: any, canViewRealStaffIdentity = false) {
+        const latestMessage = this.getLatestTicketMessageSummary(ticket);
+
         return {
             id: ticket.id,
             ticketNumber: ticket.ticketNumber,
@@ -424,6 +438,8 @@ export class HelpdeskService {
             createdAt: ticket.createdAt.toISOString(),
             updatedAt: ticket.updatedAt.toISOString(),
             lastMessageAt: ticket.lastMessageAt ? ticket.lastMessageAt.toISOString() : null,
+            latestMessageSenderType: latestMessage.senderType,
+            latestMessageCreatedAt: latestMessage.createdAt,
             closedAt: ticket.closedAt ? ticket.closedAt.toISOString() : null,
             user: this.mapUser(ticket.user),
             category: this.mapCategory(ticket.category),
@@ -992,6 +1008,14 @@ export class HelpdeskService {
                     category: true,
                     assignedAdminUser: true,
                     closedByAdminUser: true,
+                    messages: {
+                        select: {
+                            senderType: true,
+                            createdAt: true,
+                        },
+                        orderBy: { createdAt: "desc" },
+                        take: 1,
+                    },
                 },
                 orderBy: [{ lastMessageAt: "desc" }, { createdAt: "desc" }],
                 skip: (page - 1) * pageSize,

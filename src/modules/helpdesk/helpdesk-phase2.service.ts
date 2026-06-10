@@ -381,7 +381,21 @@ export class HelpdeskPhase2Service {
         };
     }
 
+    private getLatestLiveChatMessageSummary(thread: any) {
+        const messages = Array.isArray(thread?.messages) ? thread.messages : [];
+        const latestMessage = messages[0] ?? null;
+
+        return {
+            senderType: latestMessage?.senderType ?? null,
+            createdAt: latestMessage?.createdAt
+                ? latestMessage.createdAt.toISOString()
+                : null,
+        };
+    }
+
     private mapLiveChatThread(thread: any, canViewRealStaffIdentity = false, includeMessages = false) {
+        const latestMessage = this.getLatestLiveChatMessageSummary(thread);
+
         return {
             id: thread.id,
             subject: thread.subject ?? null,
@@ -389,6 +403,8 @@ export class HelpdeskPhase2Service {
             createdAt: thread.createdAt.toISOString(),
             updatedAt: thread.updatedAt.toISOString(),
             lastMessageAt: thread.lastMessageAt ? thread.lastMessageAt.toISOString() : null,
+            latestMessageSenderType: latestMessage.senderType,
+            latestMessageCreatedAt: latestMessage.createdAt,
             claimedAt: thread.claimedAt ? thread.claimedAt.toISOString() : null,
             claimExpiresAt: thread.claimExpiresAt ? thread.claimExpiresAt.toISOString() : null,
             closedAt: thread.closedAt ? thread.closedAt.toISOString() : null,
@@ -677,7 +693,17 @@ export class HelpdeskPhase2Service {
         const [items, total] = await this.prisma.$transaction([
             this.prisma.helpdeskLiveChatThread.findMany({
                 where,
-                include: this.liveChatThreadInclude(false),
+                include: {
+                    ...this.liveChatThreadInclude(false),
+                    messages: {
+                        select: {
+                            senderType: true,
+                            createdAt: true,
+                        },
+                        orderBy: { createdAt: "desc" },
+                        take: 1,
+                    },
+                },
                 orderBy: [{ lastMessageAt: "desc" }, { createdAt: "desc" }],
                 skip: (page - 1) * pageSize,
                 take: pageSize,
