@@ -38,6 +38,17 @@ export class HelpdeskTicketQueryDto {
     @IsOptional()
     @IsString()
     pageSize?: string;
+
+    @IsOptional()
+    @IsIn(["active", "archived", "all"])
+    archive?: string;
+}
+
+export class ArchiveHelpdeskRecordDto {
+    @IsOptional()
+    @IsString()
+    @MaxLength(500)
+    reason?: string;
 }
 
 export class CreateAdminHelpdeskTicketDto {
@@ -215,6 +226,10 @@ export class HelpdeskLiveChatQueryDto {
     @IsOptional()
     @IsString()
     pageSize?: string;
+
+    @IsOptional()
+    @IsIn(["active", "archived", "all"])
+    archive?: string;
 }
 
 export class StartHelpdeskLiveChatDto {

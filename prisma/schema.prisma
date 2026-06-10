@@ -573,6 +573,8 @@ enum HelpdeskTicketEventType {
   CLOSED
   REOPENED
   ESCALATED
+  ARCHIVED
+  RESTORED
 }
 
 enum HelpdeskLiveChatThreadStatus {
@@ -866,6 +868,12 @@ model HelpdeskTicket {
   lastMessageAt       DateTime?              @map("last_message_at")
   closedAt            DateTime?              @map("closed_at")
   closedByAdminUserId String?                @map("closed_by_admin_user_id") @db.Uuid
+  archivedAt          DateTime?              @map("archived_at")
+  archivedByAdminUserId String?              @map("archived_by_admin_user_id") @db.Uuid
+  archiveReason       String?                @map("archive_reason") @db.VarChar(500)
+  restoredAt          DateTime?              @map("restored_at")
+  restoredByAdminUserId String?              @map("restored_by_admin_user_id") @db.Uuid
+  restoreReason       String?                @map("restore_reason") @db.VarChar(500)
 
   user                 User?                        @relation("HelpdeskTicketUser", fields: [userId], references: [id], onDelete: Cascade)
   assignedAdminUser    AdminUser?                   @relation("HelpdeskTicketAssignedAdmin", fields: [assignedAdminUserId], references: [id], onDelete: SetNull)
@@ -881,6 +889,8 @@ model HelpdeskTicket {
   @@index([assignedAdminUserId, status])
   @@index([categoryId, status])
   @@index([lastMessageAt])
+  @@index([archivedAt])
+  @@index([status, archivedAt])
   @@map("helpdesk_tickets")
 }
 
@@ -962,6 +972,12 @@ model HelpdeskLiveChatThread {
   createdAt            DateTime                     @default(now()) @map("created_at")
   updatedAt            DateTime                     @updatedAt @map("updated_at")
   lastMessageAt        DateTime?                    @map("last_message_at")
+  archivedAt          DateTime?                    @map("archived_at")
+  archivedByAdminUserId String?                    @map("archived_by_admin_user_id") @db.Uuid
+  archiveReason       String?                      @map("archive_reason") @db.VarChar(500)
+  restoredAt          DateTime?                    @map("restored_at")
+  restoredByAdminUserId String?                    @map("restored_by_admin_user_id") @db.Uuid
+  restoreReason       String?                      @map("restore_reason") @db.VarChar(500)
 
   user               User                      @relation("HelpdeskLiveChatUser", fields: [userId], references: [id], onDelete: Cascade)
   category           HelpdeskCategory?         @relation("HelpdeskLiveChatCategory", fields: [categoryId], references: [id], onDelete: SetNull)
@@ -975,6 +991,8 @@ model HelpdeskLiveChatThread {
   @@index([claimedByAdminUserId, status])
   @@index([categoryId, status])
   @@index([claimExpiresAt])
+  @@index([archivedAt])
+  @@index([status, archivedAt])
   @@map("helpdesk_live_chat_threads")
 }
 

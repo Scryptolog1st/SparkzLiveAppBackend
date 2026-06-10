@@ -29,6 +29,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { getNotificationFailureReasonCode, sanitizeNotificationFailureReason } from "./helpdesk-notification-utils";
 import {
+    ArchiveHelpdeskRecordDto,
     CloseHelpdeskLiveChatDto,
     ConvertHelpdeskLiveChatToTicketDto,
     CreateAdminHelpdeskTicketDto,
@@ -190,6 +191,16 @@ export class HelpdeskPhase2Service {
         }
 
         return value as "any" | "claimed" | "unclaimed" | "mine";
+    }
+
+    private parseArchiveMode(raw?: string) {
+        const value = String(raw || "active").trim().toLowerCase();
+
+        if (!["active", "archived", "all"].includes(value)) {
+            throw new BadRequestException("Invalid helpdesk archive filter.");
+        }
+
+        return value as "active" | "archived" | "all";
     }
 
     private async requireAdmin(adminUserId: string) {
@@ -409,6 +420,8 @@ export class HelpdeskPhase2Service {
             claimExpiresAt: thread.claimExpiresAt ? thread.claimExpiresAt.toISOString() : null,
             closedAt: thread.closedAt ? thread.closedAt.toISOString() : null,
             closeReason: thread.closeReason ?? null,
+            archivedAt: thread.archivedAt ? thread.archivedAt.toISOString() : null,
+            restoredAt: thread.restoredAt ? thread.restoredAt.toISOString() : null,
             metadata: thread.metadataJson ?? null,
             user: this.mapUser(thread.user),
             category: this.mapCategory(thread.category),
@@ -801,16 +814,35 @@ export class HelpdeskPhase2Service {
 
     async listAdminLiveChatThreads(adminUserId: string, query: HelpdeskLiveChatQueryDto = {}) {
         const actor = await this.requireAdmin(adminUserId);
-        const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(actor.role);
+        const permissions = await this.adminRolePermissions.getEffectivePermissions(actor.role);
+        const canViewRealStaffIdentity = hasAdminPermission(
+            permissions,
+            ADMIN_PERMISSIONS.ADMIN_IDENTITY_VIEW_REAL_STAFF,
+        );
+        const canViewArchive = hasAdminPermission(
+            permissions,
+            ADMIN_PERMISSIONS.HELPDESK_ARCHIVE_VIEW,
+        );
 
         const page = this.normalizePage(query.page, 1);
         const pageSize = this.normalizePageSize(query.pageSize, 20);
         const status = this.parseLiveChatStatus(query.status);
         const assignment = this.parseLiveChatAssignment(query.assignment);
+        const archive = this.parseArchiveMode(query.archive);
+        if (archive !== "active" && !canViewArchive) {
+            throw new ForbiddenException("Admin does not have permission to view archived helpdesk records.");
+        }
+
         const search = this.normalizeOptionalString(query.search);
         const now = new Date();
 
         const andFilters: Prisma.HelpdeskLiveChatThreadWhereInput[] = [];
+
+        if (archive === "active") {
+            andFilters.push({ archivedAt: null });
+        } else if (archive === "archived") {
+            andFilters.push({ archivedAt: { not: null } });
+        }
 
         if (status) {
             andFilters.push({ status });
@@ -910,13 +942,22 @@ export class HelpdeskPhase2Service {
                 status: status ?? "all",
                 categoryId: query.categoryId ?? "all",
                 assignment,
+                archive,
             },
         };
     }
 
     async getAdminLiveChatThread(adminUserId: string, id: string) {
         const actor = await this.requireAdmin(adminUserId);
-        const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(actor.role);
+        const permissions = await this.adminRolePermissions.getEffectivePermissions(actor.role);
+        const canViewRealStaffIdentity = hasAdminPermission(
+            permissions,
+            ADMIN_PERMISSIONS.ADMIN_IDENTITY_VIEW_REAL_STAFF,
+        );
+        const canViewArchive = hasAdminPermission(
+            permissions,
+            ADMIN_PERMISSIONS.HELPDESK_ARCHIVE_VIEW,
+        );
 
         const thread = await this.prisma.helpdeskLiveChatThread.findUnique({
             where: { id },
@@ -925,6 +966,10 @@ export class HelpdeskPhase2Service {
 
         if (!thread) {
             throw new NotFoundException("Helpdesk live chat thread not found.");
+        }
+
+        if (thread.archivedAt && !canViewArchive) {
+            throw new ForbiddenException("Admin does not have permission to view archived helpdesk records.");
         }
 
         return this.mapLiveChatThread(thread, canViewRealStaffIdentity, true);
@@ -1218,6 +1263,9 @@ export class HelpdeskPhase2Service {
                     closedAt: now,
                     closedByAdminUserId: null,
                     closeReason,
+                    archivedAt: now,
+                    archivedByAdminUserId: null,
+                    archiveReason: closeReason || "Auto-archived when live chat was closed by user.",
                     claimedByAdminUserId: null,
                     claimedAt: null,
                     claimExpiresAt: null,
@@ -1314,6 +1362,9 @@ export class HelpdeskPhase2Service {
                     closedAt: now,
                     closedByAdminUserId: adminUserId,
                     closeReason,
+                    archivedAt: now,
+                    archivedByAdminUserId: adminUserId,
+                    archiveReason: closeReason || "Auto-archived when live chat was closed by support.",
                     claimedByAdminUserId: null,
                     claimedAt: null,
                     claimExpiresAt: null,
@@ -1372,6 +1423,193 @@ export class HelpdeskPhase2Service {
             resourceName: updated.subject,
             targetUserId: updated.userId,
             metadata: { status: updated.status },
+            requestContext,
+        });
+
+        return this.mapLiveChatThread(updated, canViewRealStaffIdentity, true);
+    }
+
+    async archiveLiveChatThread(
+        adminUserId: string,
+        id: string,
+        body: ArchiveHelpdeskRecordDto = {},
+        requestContext?: AdminAuditRequestContext | null,
+    ) {
+        const actor = await this.requireAdmin(adminUserId);
+        const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(actor.role);
+
+        const existing = await this.prisma.helpdeskLiveChatThread.findUnique({
+            where: { id },
+            include: this.liveChatThreadInclude(true),
+        });
+
+        if (!existing) {
+            throw new NotFoundException("Helpdesk live chat thread not found.");
+        }
+
+        if (
+            existing.status !== HelpdeskLiveChatThreadStatus.CLOSED &&
+            existing.status !== HelpdeskLiveChatThreadStatus.CONVERTED_TO_TICKET
+        ) {
+            throw new BadRequestException("Only closed or converted live chat threads can be archived.");
+        }
+
+        if (existing.archivedAt) {
+            throw new BadRequestException("Helpdesk live chat thread is already archived.");
+        }
+
+        const reason = this.normalizeOptionalString(body.reason) || "Manually archived from admin dashboard.";
+        const now = new Date();
+
+        const updated = await this.prisma.$transaction(async (tx) => {
+            const archiveResult = await tx.helpdeskLiveChatThread.updateMany({
+                where: {
+                    id: existing.id,
+                    archivedAt: null,
+                    status: {
+                        in: [
+                            HelpdeskLiveChatThreadStatus.CLOSED,
+                            HelpdeskLiveChatThreadStatus.CONVERTED_TO_TICKET,
+                        ],
+                    },
+                },
+                data: {
+                    archivedAt: now,
+                    archivedByAdminUserId: adminUserId,
+                    archiveReason: reason,
+                    claimedByAdminUserId: null,
+                    claimedAt: null,
+                    claimExpiresAt: null,
+                },
+            });
+
+            if (archiveResult.count !== 1) {
+                throw new BadRequestException("Helpdesk live chat archive state changed. Refresh and try again.");
+            }
+
+            await tx.helpdeskLiveChatMessage.create({
+                data: {
+                    threadId: existing.id,
+                    senderType: HelpdeskLiveChatMessageSenderType.SYSTEM,
+                    body: "Live chat archived by support.",
+                    metadataJson: this.toJsonObject({
+                        action: "STAFF_ARCHIVED_LIVE_CHAT",
+                    }),
+                },
+            });
+
+            const updatedThread = await tx.helpdeskLiveChatThread.findUnique({
+                where: { id: existing.id },
+                include: this.liveChatThreadInclude(true),
+            });
+
+            if (!updatedThread) {
+                throw new NotFoundException("Helpdesk live chat thread not found.");
+            }
+
+            return updatedThread;
+        });
+
+        await this.writeAudit({
+            actorAdminUserId: adminUserId,
+            actionType: "UPDATE",
+            actionCode: "helpdesk.live_chat.archive",
+            actionLabel: "Archived helpdesk live chat thread",
+            resourceType: "HELPDESK_LIVE_CHAT",
+            resourceId: updated.id,
+            resourceName: updated.subject,
+            targetUserId: updated.userId,
+            metadata: {
+                archivedAt: updated.archivedAt?.toISOString() ?? null,
+                archiveReason: updated.archiveReason ?? null,
+            },
+            requestContext,
+        });
+
+        return this.mapLiveChatThread(updated, canViewRealStaffIdentity, true);
+    }
+
+    async restoreLiveChatThread(
+        adminUserId: string,
+        id: string,
+        body: ArchiveHelpdeskRecordDto = {},
+        requestContext?: AdminAuditRequestContext | null,
+    ) {
+        const actor = await this.requireAdmin(adminUserId);
+        const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(actor.role);
+
+        const existing = await this.prisma.helpdeskLiveChatThread.findUnique({
+            where: { id },
+            include: this.liveChatThreadInclude(true),
+        });
+
+        if (!existing) {
+            throw new NotFoundException("Helpdesk live chat thread not found.");
+        }
+
+        if (!existing.archivedAt) {
+            throw new BadRequestException("Helpdesk live chat thread is not archived.");
+        }
+
+        const reason = this.normalizeOptionalString(body.reason) || "Restored from archive.";
+        const now = new Date();
+
+        const updated = await this.prisma.$transaction(async (tx) => {
+            const restoreResult = await tx.helpdeskLiveChatThread.updateMany({
+                where: {
+                    id: existing.id,
+                    archivedAt: { not: null },
+                },
+                data: {
+                    archivedAt: null,
+                    archivedByAdminUserId: null,
+                    archiveReason: null,
+                    restoredAt: now,
+                    restoredByAdminUserId: adminUserId,
+                    restoreReason: reason,
+                },
+            });
+
+            if (restoreResult.count !== 1) {
+                throw new BadRequestException("Helpdesk live chat archive state changed. Refresh and try again.");
+            }
+
+            await tx.helpdeskLiveChatMessage.create({
+                data: {
+                    threadId: existing.id,
+                    senderType: HelpdeskLiveChatMessageSenderType.SYSTEM,
+                    body: "Live chat restored from archive.",
+                    metadataJson: this.toJsonObject({
+                        action: "STAFF_RESTORED_LIVE_CHAT",
+                    }),
+                },
+            });
+
+            const updatedThread = await tx.helpdeskLiveChatThread.findUnique({
+                where: { id: existing.id },
+                include: this.liveChatThreadInclude(true),
+            });
+
+            if (!updatedThread) {
+                throw new NotFoundException("Helpdesk live chat thread not found.");
+            }
+
+            return updatedThread;
+        });
+
+        await this.writeAudit({
+            actorAdminUserId: adminUserId,
+            actionType: "UPDATE",
+            actionCode: "helpdesk.live_chat.restore",
+            actionLabel: "Restored archived helpdesk live chat thread",
+            resourceType: "HELPDESK_LIVE_CHAT",
+            resourceId: updated.id,
+            resourceName: updated.subject,
+            targetUserId: updated.userId,
+            metadata: {
+                restoredAt: updated.restoredAt?.toISOString() ?? null,
+                restoreReason: updated.restoreReason ?? null,
+            },
             requestContext,
         });
 
@@ -1437,6 +1675,9 @@ export class HelpdeskPhase2Service {
                     status: HelpdeskLiveChatThreadStatus.CONVERTED_TO_TICKET,
                     closedAt: now,
                     closedByAdminUserId: adminUserId,
+                    archivedAt: now,
+                    archivedByAdminUserId: adminUserId,
+                    archiveReason: "Auto-archived when live chat was converted to a ticket.",
                     claimedByAdminUserId: null,
                     claimedAt: null,
                     claimExpiresAt: null,

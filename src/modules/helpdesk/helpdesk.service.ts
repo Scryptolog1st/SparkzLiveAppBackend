@@ -31,6 +31,7 @@ import { getNotificationFailureReasonCode, sanitizeNotificationFailureReason } f
 import {
     AddHelpdeskInternalNoteDto,
     AdjustHelpdeskWalletDto,
+    ArchiveHelpdeskRecordDto,
     AssignHelpdeskTicketDto,
     CreateHelpdeskTicketDto,
     HelpdeskTicketQueryDto,
@@ -239,6 +240,16 @@ export class HelpdeskService {
         return value as "any" | "assigned" | "unassigned";
     }
 
+    private parseArchiveMode(raw?: string) {
+        const value = String(raw || "active").trim().toLowerCase();
+
+        if (!["active", "archived", "all"].includes(value)) {
+            throw new BadRequestException("Invalid helpdesk archive filter.");
+        }
+
+        return value as "active" | "archived" | "all";
+    }
+
     private async requireAdmin(adminUserId: string) {
         const adminUser = await this.prisma.adminUser.findUnique({
             where: { id: adminUserId },
@@ -441,6 +452,8 @@ export class HelpdeskService {
             latestMessageSenderType: latestMessage.senderType,
             latestMessageCreatedAt: latestMessage.createdAt,
             closedAt: ticket.closedAt ? ticket.closedAt.toISOString() : null,
+            archivedAt: ticket.archivedAt ? ticket.archivedAt.toISOString() : null,
+            restoredAt: ticket.restoredAt ? ticket.restoredAt.toISOString() : null,
             user: this.mapUser(ticket.user),
             category: this.mapCategory(ticket.category),
             assignedAdminUser: this.mapAdminUser(
@@ -847,6 +860,7 @@ export class HelpdeskService {
             select: {
                 id: true,
                 status: true,
+                archivedAt: true,
             },
         });
 
@@ -857,6 +871,8 @@ export class HelpdeskService {
         if (existing.status === HelpdeskTicketStatus.CLOSED) {
             throw new BadRequestException("Closed tickets cannot receive replies.");
         }
+
+        const now = new Date();
 
         await this.prisma.$transaction([
             this.prisma.helpdeskTicketMessage.create({
@@ -871,7 +887,15 @@ export class HelpdeskService {
                 where: { id: existing.id },
                 data: {
                     status: HelpdeskTicketStatus.PENDING_ADMIN,
-                    lastMessageAt: new Date(),
+                    lastMessageAt: now,
+                    archivedAt: null,
+                    archivedByAdminUserId: null,
+                    archiveReason: null,
+                    restoredAt: existing.archivedAt ? now : undefined,
+                    restoredByAdminUserId: existing.archivedAt ? null : undefined,
+                    restoreReason: existing.archivedAt
+                        ? "Auto-restored when user replied."
+                        : undefined,
                 },
             }),
             this.prisma.helpdeskTicketEvent.create({
@@ -936,16 +960,35 @@ export class HelpdeskService {
 
     async listAdminTickets(adminUserId: string, query: HelpdeskTicketQueryDto = {}) {
         const actor = await this.requireAdmin(adminUserId);
-        const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(actor.role);
+        const permissions = await this.adminRolePermissions.getEffectivePermissions(actor.role);
+        const canViewRealStaffIdentity = hasAdminPermission(
+            permissions,
+            ADMIN_PERMISSIONS.ADMIN_IDENTITY_VIEW_REAL_STAFF,
+        );
+        const canViewArchive = hasAdminPermission(
+            permissions,
+            ADMIN_PERMISSIONS.HELPDESK_ARCHIVE_VIEW,
+        );
 
         const page = this.normalizePage(query.page, 1);
         const pageSize = this.normalizePageSize(query.pageSize, 20);
         const status = this.parseStatus(query.status);
         const priority = this.parsePriority(query.priority);
         const assignment = this.parseAssignment(query.assignment);
+        const archive = this.parseArchiveMode(query.archive);
+        if (archive !== "active" && !canViewArchive) {
+            throw new ForbiddenException("Admin does not have permission to view archived helpdesk records.");
+        }
+
         const search = this.normalizeOptionalString(query.search);
 
         const andFilters: Prisma.HelpdeskTicketWhereInput[] = [];
+
+        if (archive === "active") {
+            andFilters.push({ archivedAt: null });
+        } else if (archive === "archived") {
+            andFilters.push({ archivedAt: { not: null } });
+        }
 
         if (status) {
             andFilters.push({ status });
@@ -1038,6 +1081,7 @@ export class HelpdeskService {
                 priority: priority ?? "all",
                 categoryId: query.categoryId ?? "all",
                 assignment,
+                archive,
             },
         };
     }
@@ -1050,15 +1094,28 @@ export class HelpdeskService {
         void requestContext;
 
         const actor = await this.requireAdmin(adminUserId);
-        const [canViewRealStaffIdentity, includeInternalNotes] = await Promise.all([
-            this.canViewRealStaffIdentity(actor.role),
-            this.canViewInternalNotes(actor.role),
-        ]);
+        const permissions = await this.adminRolePermissions.getEffectivePermissions(actor.role);
+        const canViewRealStaffIdentity = hasAdminPermission(
+            permissions,
+            ADMIN_PERMISSIONS.ADMIN_IDENTITY_VIEW_REAL_STAFF,
+        );
+        const includeInternalNotes = hasAdminPermission(
+            permissions,
+            ADMIN_PERMISSIONS.HELPDESK_VIEW_INTERNAL_NOTES,
+        );
+        const canViewArchive = hasAdminPermission(
+            permissions,
+            ADMIN_PERMISSIONS.HELPDESK_ARCHIVE_VIEW,
+        );
 
         const ticket = await this.findTicketByIdOrNumber(id);
 
         if (!ticket) {
             throw new NotFoundException("Helpdesk ticket not found.");
+        }
+
+        if (ticket.archivedAt && !canViewArchive) {
+            throw new ForbiddenException("Admin does not have permission to view archived helpdesk records.");
         }
 
         return this.mapTicketDetail(ticket, canViewRealStaffIdentity, includeInternalNotes);
@@ -1498,13 +1555,39 @@ export class HelpdeskService {
             throw new ForbiddenException("Admin does not have permission to update helpdesk ticket status.");
         }
 
+        if (reopening && existing.archivedAt) {
+            throw new BadRequestException("Restore archived tickets before reopening them.");
+        }
+
+        const now = new Date();
+
         const updated = await this.prisma.$transaction(async (tx) => {
             const updatedTicket = await tx.helpdeskTicket.update({
                 where: { id: existing.id },
                 data: {
                     status: nextStatus,
-                    closedAt: closing ? new Date() : null,
+                    closedAt: closing ? now : null,
                     closedByAdminUserId: closing ? adminUserId : null,
+                    archivedAt: reopening
+                        ? null
+                        : closing
+                            ? existing.archivedAt ?? now
+                            : existing.archivedAt,
+                    archivedByAdminUserId: reopening
+                        ? null
+                        : closing
+                            ? existing.archivedByAdminUserId ?? adminUserId
+                            : existing.archivedByAdminUserId,
+                    archiveReason: reopening
+                        ? null
+                        : closing
+                            ? existing.archiveReason ?? `Auto-archived when ticket status changed to ${nextStatus}.`
+                            : existing.archiveReason,
+                    restoredAt: reopening ? now : existing.restoredAt,
+                    restoredByAdminUserId: reopening ? adminUserId : existing.restoredByAdminUserId,
+                    restoreReason: reopening
+                        ? "Auto-restored when ticket was reopened."
+                        : existing.restoreReason,
                 },
                 include: this.ticketInclude(true),
             });
@@ -1538,6 +1621,182 @@ export class HelpdeskService {
             beforeState: { status: existing.status },
             afterState: { status: updated.status },
             diff: { status: { before: existing.status, after: updated.status } },
+            requestContext,
+        });
+
+        return this.mapTicketDetail(updated, canViewRealStaffIdentity, includeInternalNotes);
+    }
+
+    async archiveTicket(
+        adminUserId: string,
+        id: string,
+        body: ArchiveHelpdeskRecordDto = {},
+        requestContext?: AdminAuditRequestContext | null,
+    ) {
+        const actor = await this.requireAdmin(adminUserId);
+        const [canViewRealStaffIdentity, includeInternalNotes] = await Promise.all([
+            this.canViewRealStaffIdentity(actor.role),
+            this.canViewInternalNotes(actor.role),
+        ]);
+
+        const existing = await this.findTicketByIdOrNumber(id);
+        if (!existing) {
+            throw new NotFoundException("Helpdesk ticket not found.");
+        }
+
+        if (
+            existing.status !== HelpdeskTicketStatus.CLOSED &&
+            existing.status !== HelpdeskTicketStatus.RESOLVED
+        ) {
+            throw new BadRequestException("Only closed or resolved helpdesk tickets can be archived.");
+        }
+
+        if (existing.archivedAt) {
+            throw new BadRequestException("Helpdesk ticket is already archived.");
+        }
+
+        const reason = this.normalizeOptionalString(body.reason) || "Manually archived from admin dashboard.";
+        const now = new Date();
+
+        const updated = await this.prisma.$transaction(async (tx) => {
+            const archiveResult = await tx.helpdeskTicket.updateMany({
+                where: {
+                    id: existing.id,
+                    archivedAt: null,
+                    status: {
+                        in: [HelpdeskTicketStatus.CLOSED, HelpdeskTicketStatus.RESOLVED],
+                    },
+                },
+                data: {
+                    archivedAt: now,
+                    archivedByAdminUserId: adminUserId,
+                    archiveReason: reason,
+                },
+            });
+
+            if (archiveResult.count !== 1) {
+                throw new BadRequestException("Helpdesk ticket archive state changed. Refresh and try again.");
+            }
+
+            const updatedTicket = await tx.helpdeskTicket.findUniqueOrThrow({
+                where: { id: existing.id },
+                include: this.ticketInclude(true),
+            });
+
+            await tx.helpdeskTicketEvent.create({
+                data: {
+                    ticketId: updatedTicket.id,
+                    actorAdminUserId: adminUserId,
+                    eventType: HelpdeskTicketEventType.ARCHIVED,
+                    beforeJson: this.toJsonObject({ archivedAt: null }),
+                    afterJson: this.toJsonObject({
+                        archivedAt: now.toISOString(),
+                    }),
+                },
+            });
+
+            return updatedTicket;
+        });
+
+        await this.addAdminAuditLog({
+            actorAdminUserId: adminUserId,
+            ticket: updated,
+            actionType: "UPDATE",
+            actionCode: "helpdesk.ticket.archive",
+            actionLabel: "Archived helpdesk ticket",
+            beforeState: { archivedAt: null },
+            afterState: {
+                archivedAt: updated.archivedAt?.toISOString() ?? null,
+                archiveReason: updated.archiveReason ?? null,
+            },
+            requestContext,
+        });
+
+        return this.mapTicketDetail(updated, canViewRealStaffIdentity, includeInternalNotes);
+    }
+
+    async restoreTicket(
+        adminUserId: string,
+        id: string,
+        body: ArchiveHelpdeskRecordDto = {},
+        requestContext?: AdminAuditRequestContext | null,
+    ) {
+        const actor = await this.requireAdmin(adminUserId);
+        const [canViewRealStaffIdentity, includeInternalNotes] = await Promise.all([
+            this.canViewRealStaffIdentity(actor.role),
+            this.canViewInternalNotes(actor.role),
+        ]);
+
+        const existing = await this.findTicketByIdOrNumber(id);
+        if (!existing) {
+            throw new NotFoundException("Helpdesk ticket not found.");
+        }
+
+        if (!existing.archivedAt) {
+            throw new BadRequestException("Helpdesk ticket is not archived.");
+        }
+
+        const existingArchivedAt = existing.archivedAt;
+        const reason = this.normalizeOptionalString(body.reason) || "Restored from archive.";
+        const now = new Date();
+
+        const updated = await this.prisma.$transaction(async (tx) => {
+            const restoreResult = await tx.helpdeskTicket.updateMany({
+                where: {
+                    id: existing.id,
+                    archivedAt: { not: null },
+                },
+                data: {
+                    archivedAt: null,
+                    archivedByAdminUserId: null,
+                    archiveReason: null,
+                    restoredAt: now,
+                    restoredByAdminUserId: adminUserId,
+                    restoreReason: reason,
+                },
+            });
+
+            if (restoreResult.count !== 1) {
+                throw new BadRequestException("Helpdesk ticket archive state changed. Refresh and try again.");
+            }
+
+            const updatedTicket = await tx.helpdeskTicket.findUniqueOrThrow({
+                where: { id: existing.id },
+                include: this.ticketInclude(true),
+            });
+
+            await tx.helpdeskTicketEvent.create({
+                data: {
+                    ticketId: updatedTicket.id,
+                    actorAdminUserId: adminUserId,
+                    eventType: HelpdeskTicketEventType.RESTORED,
+                    beforeJson: this.toJsonObject({
+                        archivedAt: existingArchivedAt.toISOString(),
+                    }),
+                    afterJson: this.toJsonObject({
+                        archivedAt: null,
+                    }),
+                },
+            });
+
+            return updatedTicket;
+        });
+
+        await this.addAdminAuditLog({
+            actorAdminUserId: adminUserId,
+            ticket: updated,
+            actionType: "UPDATE",
+            actionCode: "helpdesk.ticket.restore",
+            actionLabel: "Restored archived helpdesk ticket",
+            beforeState: {
+                archivedAt: existingArchivedAt.toISOString(),
+                archiveReason: existing.archiveReason ?? null,
+            },
+            afterState: {
+                archivedAt: null,
+                restoredAt: updated.restoredAt?.toISOString() ?? null,
+                restoreReason: updated.restoreReason ?? null,
+            },
             requestContext,
         });
 

@@ -27,6 +27,7 @@ import { RequireAdminPermission } from "../admin-users/require-admin-permission.
 import {
     AddHelpdeskInternalNoteDto,
     AdjustHelpdeskWalletDto,
+    ArchiveHelpdeskRecordDto,
     AssignHelpdeskTicketDto,
     CloseHelpdeskLiveChatDto,
     ConvertHelpdeskLiveChatToTicketDto,
@@ -265,6 +266,36 @@ export class AdminHelpdeskController {
         );
     }
 
+    @Post("live-chat/threads/:id/archive")
+    @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_LIVE_CHAT_ARCHIVE)
+    async archiveLiveChatThread(
+        @Req() req: AdminRequestWithUser,
+        @Param("id") id: string,
+        @Body() body: ArchiveHelpdeskRecordDto,
+    ) {
+        return this.phase2.archiveLiveChatThread(
+            this.requireAdminUserId(req),
+            id,
+            body,
+            this.buildAuditContext(req),
+        );
+    }
+
+    @Post("live-chat/threads/:id/restore")
+    @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_ARCHIVE_RESTORE)
+    async restoreLiveChatThread(
+        @Req() req: AdminRequestWithUser,
+        @Param("id") id: string,
+        @Body() body: ArchiveHelpdeskRecordDto,
+    ) {
+        return this.phase2.restoreLiveChatThread(
+            this.requireAdminUserId(req),
+            id,
+            body,
+            this.buildAuditContext(req),
+        );
+    }
+
     @Post("live-chat/threads/:id/close")
     @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_LIVE_CHAT_MANAGE)
     async closeLiveChatThread(
@@ -358,6 +389,36 @@ export class AdminHelpdeskController {
             req.adminUser.id,
             userId,
             "SPARKZ",
+            body,
+            this.buildAuditContext(req),
+        );
+    }
+
+    @Post("tickets/:id/archive")
+    @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_TICKET_ARCHIVE)
+    async archiveTicket(
+        @Req() req: AdminRequestWithUser,
+        @Param("id") id: string,
+        @Body() body: ArchiveHelpdeskRecordDto,
+    ) {
+        return this.helpdesk.archiveTicket(
+            this.requireAdminUserId(req),
+            id,
+            body,
+            this.buildAuditContext(req),
+        );
+    }
+
+    @Post("tickets/:id/restore")
+    @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_ARCHIVE_RESTORE)
+    async restoreTicket(
+        @Req() req: AdminRequestWithUser,
+        @Param("id") id: string,
+        @Body() body: ArchiveHelpdeskRecordDto,
+    ) {
+        return this.helpdesk.restoreTicket(
+            this.requireAdminUserId(req),
+            id,
             body,
             this.buildAuditContext(req),
         );
