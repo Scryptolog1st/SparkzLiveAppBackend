@@ -919,6 +919,10 @@ export class HelpdeskService {
         const todayStart = new Date();
         todayStart.setHours(0, 0, 0, 0);
 
+        const activeTicketWhere = {
+            archivedAt: null,
+        } satisfies Prisma.HelpdeskTicketWhereInput;
+
         const [
             open,
             pendingAdmin,
@@ -929,18 +933,30 @@ export class HelpdeskService {
             unassigned,
             urgent,
         ] = await this.prisma.$transaction([
-            this.prisma.helpdeskTicket.count({ where: { status: HelpdeskTicketStatus.OPEN } }),
-            this.prisma.helpdeskTicket.count({ where: { status: HelpdeskTicketStatus.PENDING_ADMIN } }),
-            this.prisma.helpdeskTicket.count({ where: { status: HelpdeskTicketStatus.PENDING_USER } }),
-            this.prisma.helpdeskTicket.count({ where: { status: HelpdeskTicketStatus.ESCALATED } }),
             this.prisma.helpdeskTicket.count({
-                where: { status: HelpdeskTicketStatus.RESOLVED, closedAt: { gte: todayStart } },
+                where: { ...activeTicketWhere, status: HelpdeskTicketStatus.OPEN },
             }),
             this.prisma.helpdeskTicket.count({
-                where: { status: HelpdeskTicketStatus.CLOSED, closedAt: { gte: todayStart } },
+                where: { ...activeTicketWhere, status: HelpdeskTicketStatus.PENDING_ADMIN },
             }),
-            this.prisma.helpdeskTicket.count({ where: { assignedAdminUserId: null } }),
-            this.prisma.helpdeskTicket.count({ where: { priority: HelpdeskTicketPriority.URGENT } }),
+            this.prisma.helpdeskTicket.count({
+                where: { ...activeTicketWhere, status: HelpdeskTicketStatus.PENDING_USER },
+            }),
+            this.prisma.helpdeskTicket.count({
+                where: { ...activeTicketWhere, status: HelpdeskTicketStatus.ESCALATED },
+            }),
+            this.prisma.helpdeskTicket.count({
+                where: { ...activeTicketWhere, status: HelpdeskTicketStatus.RESOLVED, closedAt: { gte: todayStart } },
+            }),
+            this.prisma.helpdeskTicket.count({
+                where: { ...activeTicketWhere, status: HelpdeskTicketStatus.CLOSED, closedAt: { gte: todayStart } },
+            }),
+            this.prisma.helpdeskTicket.count({
+                where: { ...activeTicketWhere, assignedAdminUserId: null },
+            }),
+            this.prisma.helpdeskTicket.count({
+                where: { ...activeTicketWhere, priority: HelpdeskTicketPriority.URGENT },
+            }),
         ]);
 
         return {
