@@ -949,7 +949,15 @@ export class HelpdeskPhase2Service {
 
     async getAdminLiveChatThread(adminUserId: string, id: string) {
         const actor = await this.requireAdmin(adminUserId);
-        const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(actor.role);
+        const permissions = await this.adminRolePermissions.getEffectivePermissions(actor.role);
+        const canViewRealStaffIdentity = hasAdminPermission(
+            permissions,
+            ADMIN_PERMISSIONS.ADMIN_IDENTITY_VIEW_REAL_STAFF,
+        );
+        const canViewArchive = hasAdminPermission(
+            permissions,
+            ADMIN_PERMISSIONS.HELPDESK_ARCHIVE_VIEW,
+        );
 
         const thread = await this.prisma.helpdeskLiveChatThread.findUnique({
             where: { id },
@@ -958,6 +966,10 @@ export class HelpdeskPhase2Service {
 
         if (!thread) {
             throw new NotFoundException("Helpdesk live chat thread not found.");
+        }
+
+        if (thread.archivedAt && !canViewArchive) {
+            throw new ForbiddenException("Admin does not have permission to view archived helpdesk records.");
         }
 
         return this.mapLiveChatThread(thread, canViewRealStaffIdentity, true);

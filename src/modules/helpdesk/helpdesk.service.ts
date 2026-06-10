@@ -1094,15 +1094,28 @@ export class HelpdeskService {
         void requestContext;
 
         const actor = await this.requireAdmin(adminUserId);
-        const [canViewRealStaffIdentity, includeInternalNotes] = await Promise.all([
-            this.canViewRealStaffIdentity(actor.role),
-            this.canViewInternalNotes(actor.role),
-        ]);
+        const permissions = await this.adminRolePermissions.getEffectivePermissions(actor.role);
+        const canViewRealStaffIdentity = hasAdminPermission(
+            permissions,
+            ADMIN_PERMISSIONS.ADMIN_IDENTITY_VIEW_REAL_STAFF,
+        );
+        const includeInternalNotes = hasAdminPermission(
+            permissions,
+            ADMIN_PERMISSIONS.HELPDESK_VIEW_INTERNAL_NOTES,
+        );
+        const canViewArchive = hasAdminPermission(
+            permissions,
+            ADMIN_PERMISSIONS.HELPDESK_ARCHIVE_VIEW,
+        );
 
         const ticket = await this.findTicketByIdOrNumber(id);
 
         if (!ticket) {
             throw new NotFoundException("Helpdesk ticket not found.");
+        }
+
+        if (ticket.archivedAt && !canViewArchive) {
+            throw new ForbiddenException("Admin does not have permission to view archived helpdesk records.");
         }
 
         return this.mapTicketDetail(ticket, canViewRealStaffIdentity, includeInternalNotes);
