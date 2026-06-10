@@ -1670,6 +1670,7 @@ export class HelpdeskService {
             throw new BadRequestException("Helpdesk ticket is not archived.");
         }
 
+        const existingArchivedAt = existing.archivedAt;
         const reason = this.normalizeOptionalString(body.reason) || "Restored from archive.";
         const now = new Date();
 
@@ -1693,7 +1694,7 @@ export class HelpdeskService {
                     actorAdminUserId: adminUserId,
                     eventType: HelpdeskTicketEventType.RESTORED,
                     beforeJson: this.toJsonObject({
-                        archivedAt: existing.archivedAt.toISOString(),
+                        archivedAt: existingArchivedAt.toISOString(),
                         archiveReason: existing.archiveReason ?? null,
                     }),
                     afterJson: this.toJsonObject({
