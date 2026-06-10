@@ -879,7 +879,17 @@ export class HelpdeskPhase2Service {
         const [items, total] = await this.prisma.$transaction([
             this.prisma.helpdeskLiveChatThread.findMany({
                 where,
-                include: this.liveChatThreadInclude(false),
+                include: {
+                    ...this.liveChatThreadInclude(false),
+                    messages: {
+                        select: {
+                            senderType: true,
+                            createdAt: true,
+                        },
+                        orderBy: { createdAt: "desc" },
+                        take: 1,
+                    },
+                },
                 orderBy: [{ lastMessageAt: "desc" }, { createdAt: "desc" }],
                 skip: (page - 1) * pageSize,
                 take: pageSize,
