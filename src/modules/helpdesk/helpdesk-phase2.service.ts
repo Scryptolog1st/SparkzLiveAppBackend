@@ -421,9 +421,7 @@ export class HelpdeskPhase2Service {
             closedAt: thread.closedAt ? thread.closedAt.toISOString() : null,
             closeReason: thread.closeReason ?? null,
             archivedAt: thread.archivedAt ? thread.archivedAt.toISOString() : null,
-            archiveReason: thread.archiveReason ?? null,
             restoredAt: thread.restoredAt ? thread.restoredAt.toISOString() : null,
-            restoreReason: thread.restoreReason ?? null,
             metadata: thread.metadataJson ?? null,
             user: this.mapUser(thread.user),
             category: this.mapCategory(thread.category),
@@ -816,13 +814,25 @@ export class HelpdeskPhase2Service {
 
     async listAdminLiveChatThreads(adminUserId: string, query: HelpdeskLiveChatQueryDto = {}) {
         const actor = await this.requireAdmin(adminUserId);
-        const canViewRealStaffIdentity = await this.canViewRealStaffIdentity(actor.role);
+        const permissions = await this.adminRolePermissions.getEffectivePermissions(actor.role);
+        const canViewRealStaffIdentity = hasAdminPermission(
+            permissions,
+            ADMIN_PERMISSIONS.ADMIN_IDENTITY_VIEW_REAL_STAFF,
+        );
+        const canViewArchive = hasAdminPermission(
+            permissions,
+            ADMIN_PERMISSIONS.HELPDESK_ARCHIVE_VIEW,
+        );
 
         const page = this.normalizePage(query.page, 1);
         const pageSize = this.normalizePageSize(query.pageSize, 20);
         const status = this.parseLiveChatStatus(query.status);
         const assignment = this.parseLiveChatAssignment(query.assignment);
         const archive = this.parseArchiveMode(query.archive);
+        if (archive !== "active" && !canViewArchive) {
+            throw new ForbiddenException("Admin does not have permission to view archived helpdesk records.");
+        }
+
         const search = this.normalizeOptionalString(query.search);
         const now = new Date();
 
@@ -1425,6 +1435,13 @@ export class HelpdeskPhase2Service {
             throw new NotFoundException("Helpdesk live chat thread not found.");
         }
 
+        if (
+            existing.status !== HelpdeskLiveChatThreadStatus.CLOSED &&
+            existing.status !== HelpdeskLiveChatThreadStatus.CONVERTED_TO_TICKET
+        ) {
+            throw new BadRequestException("Only closed or converted live chat threads can be archived.");
+        }
+
         if (existing.archivedAt) {
             throw new BadRequestException("Helpdesk live chat thread is already archived.");
         }
@@ -1433,8 +1450,17 @@ export class HelpdeskPhase2Service {
         const now = new Date();
 
         const updated = await this.prisma.$transaction(async (tx) => {
-            const updatedThread = await tx.helpdeskLiveChatThread.update({
-                where: { id: existing.id },
+            const archiveResult = await tx.helpdeskLiveChatThread.updateMany({
+                where: {
+                    id: existing.id,
+                    archivedAt: null,
+                    status: {
+                        in: [
+                            HelpdeskLiveChatThreadStatus.CLOSED,
+                            HelpdeskLiveChatThreadStatus.CONVERTED_TO_TICKET,
+                        ],
+                    },
+                },
                 data: {
                     archivedAt: now,
                     archivedByAdminUserId: adminUserId,
@@ -1443,8 +1469,11 @@ export class HelpdeskPhase2Service {
                     claimedAt: null,
                     claimExpiresAt: null,
                 },
-                include: this.liveChatThreadInclude(true),
             });
+
+            if (archiveResult.count !== 1) {
+                throw new BadRequestException("Helpdesk live chat archive state changed. Refresh and try again.");
+            }
 
             await tx.helpdeskLiveChatMessage.create({
                 data: {
@@ -1453,10 +1482,18 @@ export class HelpdeskPhase2Service {
                     body: "Live chat archived by support.",
                     metadataJson: this.toJsonObject({
                         action: "STAFF_ARCHIVED_LIVE_CHAT",
-                        reason,
                     }),
                 },
             });
+
+            const updatedThread = await tx.helpdeskLiveChatThread.findUnique({
+                where: { id: existing.id },
+                include: this.liveChatThreadInclude(true),
+            });
+
+            if (!updatedThread) {
+                throw new NotFoundException("Helpdesk live chat thread not found.");
+            }
 
             return updatedThread;
         });
@@ -1506,8 +1543,11 @@ export class HelpdeskPhase2Service {
         const now = new Date();
 
         const updated = await this.prisma.$transaction(async (tx) => {
-            const updatedThread = await tx.helpdeskLiveChatThread.update({
-                where: { id: existing.id },
+            const restoreResult = await tx.helpdeskLiveChatThread.updateMany({
+                where: {
+                    id: existing.id,
+                    archivedAt: { not: null },
+                },
                 data: {
                     archivedAt: null,
                     archivedByAdminUserId: null,
@@ -1516,8 +1556,11 @@ export class HelpdeskPhase2Service {
                     restoredByAdminUserId: adminUserId,
                     restoreReason: reason,
                 },
-                include: this.liveChatThreadInclude(true),
             });
+
+            if (restoreResult.count !== 1) {
+                throw new BadRequestException("Helpdesk live chat archive state changed. Refresh and try again.");
+            }
 
             await tx.helpdeskLiveChatMessage.create({
                 data: {
@@ -1526,10 +1569,18 @@ export class HelpdeskPhase2Service {
                     body: "Live chat restored from archive.",
                     metadataJson: this.toJsonObject({
                         action: "STAFF_RESTORED_LIVE_CHAT",
-                        reason,
                     }),
                 },
             });
+
+            const updatedThread = await tx.helpdeskLiveChatThread.findUnique({
+                where: { id: existing.id },
+                include: this.liveChatThreadInclude(true),
+            });
+
+            if (!updatedThread) {
+                throw new NotFoundException("Helpdesk live chat thread not found.");
+            }
 
             return updatedThread;
         });

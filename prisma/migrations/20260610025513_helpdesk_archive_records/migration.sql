@@ -1,6 +1,9 @@
 -- Helpdesk archive support.
 -- Records are never deleted; archive only hides them from active admin queues.
 
+ALTER TYPE "HelpdeskTicketEventType" ADD VALUE IF NOT EXISTS 'ARCHIVED';
+ALTER TYPE "HelpdeskTicketEventType" ADD VALUE IF NOT EXISTS 'RESTORED';
+
 ALTER TABLE "helpdesk_tickets"
 ADD COLUMN "archived_at" TIMESTAMP(3),
 ADD COLUMN "archived_by_admin_user_id" UUID,

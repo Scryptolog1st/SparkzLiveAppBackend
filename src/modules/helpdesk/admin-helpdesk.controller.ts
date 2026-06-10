@@ -269,12 +269,12 @@ export class AdminHelpdeskController {
     @Post("live-chat/threads/:id/archive")
     @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_LIVE_CHAT_ARCHIVE)
     async archiveLiveChatThread(
-        @Req() req: any,
+        @Req() req: AdminRequestWithUser,
         @Param("id") id: string,
         @Body() body: ArchiveHelpdeskRecordDto,
     ) {
         return this.phase2.archiveLiveChatThread(
-            req.adminUser.id,
+            this.requireAdminUserId(req),
             id,
             body,
             this.buildAuditContext(req),
@@ -284,12 +284,12 @@ export class AdminHelpdeskController {
     @Post("live-chat/threads/:id/restore")
     @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_ARCHIVE_RESTORE)
     async restoreLiveChatThread(
-        @Req() req: any,
+        @Req() req: AdminRequestWithUser,
         @Param("id") id: string,
         @Body() body: ArchiveHelpdeskRecordDto,
     ) {
         return this.phase2.restoreLiveChatThread(
-            req.adminUser.id,
+            this.requireAdminUserId(req),
             id,
             body,
             this.buildAuditContext(req),
@@ -397,12 +397,12 @@ export class AdminHelpdeskController {
     @Post("tickets/:id/archive")
     @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_TICKET_ARCHIVE)
     async archiveTicket(
-        @Req() req: any,
+        @Req() req: AdminRequestWithUser,
         @Param("id") id: string,
         @Body() body: ArchiveHelpdeskRecordDto,
     ) {
         return this.helpdesk.archiveTicket(
-            req.adminUser.id,
+            this.requireAdminUserId(req),
             id,
             body,
             this.buildAuditContext(req),
@@ -412,12 +412,12 @@ export class AdminHelpdeskController {
     @Post("tickets/:id/restore")
     @RequireAdminPermission(ADMIN_PERMISSIONS.HELPDESK_ARCHIVE_RESTORE)
     async restoreTicket(
-        @Req() req: any,
+        @Req() req: AdminRequestWithUser,
         @Param("id") id: string,
         @Body() body: ArchiveHelpdeskRecordDto,
     ) {
         return this.helpdesk.restoreTicket(
-            req.adminUser.id,
+            this.requireAdminUserId(req),
             id,
             body,
             this.buildAuditContext(req),
