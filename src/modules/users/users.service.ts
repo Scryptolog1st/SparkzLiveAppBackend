@@ -55,7 +55,7 @@ export class UsersService {
   }
 
   private normalizeUsername(value: string): string {
-    return String(value || "").trim();
+    return String(value || "").trim().toLowerCase();
   }
 
   private resolveDisplayName(
@@ -131,7 +131,7 @@ export class UsersService {
     const normalizedEmail = this.normalizeEmail(email);
     if (!normalizedEmail) return null;
 
-    return this.prisma.user.findFirst({
+    const matches = await this.prisma.user.findMany({
       where: {
         email: {
           equals: normalizedEmail,
@@ -139,14 +139,23 @@ export class UsersService {
         },
       },
       include: USER_WITH_PROFILE_INCLUDE,
+      take: 2,
     });
+
+    if (matches.length > 1) {
+      throw new ConflictException(
+        "Multiple users match this email. Please contact support.",
+      );
+    }
+
+    return matches[0] ?? null;
   }
 
   async findByUsername(username: string): Promise<UserWithProfile | null> {
     const normalizedUsername = this.normalizeUsername(username);
     if (!normalizedUsername) return null;
 
-    return this.prisma.user.findFirst({
+    const matches = await this.prisma.user.findMany({
       where: {
         username: {
           equals: normalizedUsername,
@@ -154,7 +163,16 @@ export class UsersService {
         },
       },
       include: USER_WITH_PROFILE_INCLUDE,
+      take: 2,
     });
+
+    if (matches.length > 1) {
+      throw new ConflictException(
+        "Multiple users match this username. Please contact support.",
+      );
+    }
+
+    return matches[0] ?? null;
   }
 
   async findByPublicId(publicId: string): Promise<UserWithProfile | null> {
@@ -209,7 +227,7 @@ export class UsersService {
     passwordHash: string;
   }): Promise<UserWithProfile> {
     const email = this.normalizeEmail(params.email);
-    const username = params.username.trim();
+    const username = this.normalizeUsername(params.username);
     const { passwordHash } = params;
 
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
