@@ -54,6 +54,10 @@ export class UsersService {
     return String(value || "").trim().toLowerCase();
   }
 
+  private normalizeUsername(value: string): string {
+    return String(value || "").trim().toLowerCase();
+  }
+
   private resolveDisplayName(
     user: Pick<User, "username"> & { profile?: Pick<Profile, "displayName"> | null },
     explicitProfile?: Pick<Profile, "displayName"> | null,
@@ -124,17 +128,51 @@ export class UsersService {
   }
 
   async findByEmail(email: string): Promise<UserWithProfile | null> {
-    return this.prisma.user.findUnique({
-      where: { email: this.normalizeEmail(email) },
+    const normalizedEmail = this.normalizeEmail(email);
+    if (!normalizedEmail) return null;
+
+    const matches = await this.prisma.user.findMany({
+      where: {
+        email: {
+          equals: normalizedEmail,
+          mode: "insensitive",
+        },
+      },
       include: USER_WITH_PROFILE_INCLUDE,
+      take: 2,
     });
+
+    if (matches.length > 1) {
+      throw new ConflictException(
+        "Multiple users match this email. Please contact support.",
+      );
+    }
+
+    return matches[0] ?? null;
   }
 
   async findByUsername(username: string): Promise<UserWithProfile | null> {
-    return this.prisma.user.findUnique({
-      where: { username },
+    const normalizedUsername = this.normalizeUsername(username);
+    if (!normalizedUsername) return null;
+
+    const matches = await this.prisma.user.findMany({
+      where: {
+        username: {
+          equals: normalizedUsername,
+          mode: "insensitive",
+        },
+      },
       include: USER_WITH_PROFILE_INCLUDE,
+      take: 2,
     });
+
+    if (matches.length > 1) {
+      throw new ConflictException(
+        "Multiple users match this username. Please contact support.",
+      );
+    }
+
+    return matches[0] ?? null;
   }
 
   async findByPublicId(publicId: string): Promise<UserWithProfile | null> {
@@ -189,7 +227,7 @@ export class UsersService {
     passwordHash: string;
   }): Promise<UserWithProfile> {
     const email = this.normalizeEmail(params.email);
-    const username = params.username.trim();
+    const username = this.normalizeUsername(params.username);
     const { passwordHash } = params;
 
     return this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
@@ -234,7 +272,14 @@ export class UsersService {
     }
 
     const taken = await this.prisma.user.findFirst({
-      where: { email: normalizedEmail, NOT: { id: userId } },
+      where: {
+        email: {
+          equals: normalizedEmail,
+          mode: "insensitive",
+        },
+        NOT: { id: userId },
+      },
+      select: { id: true },
     });
     if (taken) throw new ConflictException("Email already in use");
 
