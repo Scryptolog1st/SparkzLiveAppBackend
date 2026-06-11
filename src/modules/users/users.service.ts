@@ -54,6 +54,10 @@ export class UsersService {
     return String(value || "").trim().toLowerCase();
   }
 
+  private normalizeUsername(value: string): string {
+    return String(value || "").trim();
+  }
+
   private resolveDisplayName(
     user: Pick<User, "username"> & { profile?: Pick<Profile, "displayName"> | null },
     explicitProfile?: Pick<Profile, "displayName"> | null,
@@ -124,15 +128,31 @@ export class UsersService {
   }
 
   async findByEmail(email: string): Promise<UserWithProfile | null> {
-    return this.prisma.user.findUnique({
-      where: { email: this.normalizeEmail(email) },
+    const normalizedEmail = this.normalizeEmail(email);
+    if (!normalizedEmail) return null;
+
+    return this.prisma.user.findFirst({
+      where: {
+        email: {
+          equals: normalizedEmail,
+          mode: "insensitive",
+        },
+      },
       include: USER_WITH_PROFILE_INCLUDE,
     });
   }
 
   async findByUsername(username: string): Promise<UserWithProfile | null> {
-    return this.prisma.user.findUnique({
-      where: { username },
+    const normalizedUsername = this.normalizeUsername(username);
+    if (!normalizedUsername) return null;
+
+    return this.prisma.user.findFirst({
+      where: {
+        username: {
+          equals: normalizedUsername,
+          mode: "insensitive",
+        },
+      },
       include: USER_WITH_PROFILE_INCLUDE,
     });
   }
