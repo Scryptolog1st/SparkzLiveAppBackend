@@ -272,7 +272,14 @@ export class UsersService {
     }
 
     const taken = await this.prisma.user.findFirst({
-      where: { email: normalizedEmail, NOT: { id: userId } },
+      where: {
+        email: {
+          equals: normalizedEmail,
+          mode: "insensitive",
+        },
+        NOT: { id: userId },
+      },
+      select: { id: true },
     });
     if (taken) throw new ConflictException("Email already in use");
 
