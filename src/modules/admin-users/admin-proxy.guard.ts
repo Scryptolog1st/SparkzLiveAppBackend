@@ -70,7 +70,7 @@ export class AdminProxyGuard implements CanActivate {
             hasConfiguredSecret: Boolean(configuredSecret),
             hasProvidedSecret: Boolean(providedSecret),
             adminUserId: this.short(adminUserId),
-            hasAdminEmail: Boolean(adminEmail),
+            hasIdentityHeader: Boolean(adminEmail),
         });
 
         if (!configuredSecret) {
@@ -88,7 +88,7 @@ export class AdminProxyGuard implements CanActivate {
                 path,
                 hasProvidedSecret: Boolean(providedSecret),
                 adminUserId: this.short(adminUserId),
-                hasAdminEmail: Boolean(adminEmail),
+                hasIdentityHeader: Boolean(adminEmail),
             });
 
             throw new UnauthorizedException("Invalid admin API credentials.");
@@ -97,7 +97,7 @@ export class AdminProxyGuard implements CanActivate {
         if (!adminUserId) {
             console.error("[AdminProxyGuard] Missing admin user identity", {
                 path,
-                hasAdminEmail: Boolean(adminEmail),
+                hasIdentityHeader: Boolean(adminEmail),
             });
 
             throw new UnauthorizedException("Missing admin user identity.");
@@ -118,7 +118,7 @@ export class AdminProxyGuard implements CanActivate {
             console.error("[AdminProxyGuard] Admin account not found", {
                 path,
                 adminUserId: this.short(adminUserId),
-                hasAdminEmail: Boolean(adminEmail),
+                hasIdentityHeader: Boolean(adminEmail),
             });
 
             throw new UnauthorizedException("Admin account not found.");
@@ -128,7 +128,7 @@ export class AdminProxyGuard implements CanActivate {
             console.error("[AdminProxyGuard] Admin account inactive", {
                 path,
                 adminUserId: this.short(adminUserId),
-                hasAdminEmail: Boolean(adminEmail),
+                hasIdentityHeader: Boolean(adminEmail),
             });
 
             throw new ForbiddenException("Admin account is inactive.");
@@ -138,7 +138,7 @@ export class AdminProxyGuard implements CanActivate {
             console.error("[AdminProxyGuard] Admin identity mismatch", {
                 path,
                 adminUserId: this.short(adminUserId),
-                hasProvidedEmail: Boolean(adminEmail),
+                hasIdentityHeader: Boolean(adminEmail),
                 emailMatchesAccount: false,
             });
 
